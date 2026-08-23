@@ -18,7 +18,7 @@ podman run --rm -e privatekey='your-long-secret' -p 8080:8080 gupt-bots
 
 Then open [http://localhost:8080](http://localhost:8080) for names, descriptions, and public keys.
 
-Bot files go under `/tmp/gupt-bots`. Compose also starts `gupt-cleanup`, which deletes files older than 30 days.
+Bot files go under `/tmp/gupt-bots`. The same process deletes files older than 30 days.
 
 ## Add a bot
 

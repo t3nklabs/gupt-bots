@@ -13,17 +13,5 @@ services:
       - gupt-tmp:/tmp/gupt-bots
     restart: unless-stopped
 
-  gupt-cleanup:
-    image: gupt-bots
-    container_name: gupt-cleanup
-    depends_on:
-      - gupt-bots
-    command: ["node", "src/cleanup-worker.js"]
-    environment:
-      BOT_TMP_DIR: /tmp/gupt-bots
-    volumes:
-      - gupt-tmp:/tmp/gupt-bots
-    restart: unless-stopped
-
 volumes:
   gupt-tmp:

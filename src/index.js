@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 
 import { GuptBot } from "gupt-sdk";
 
+import { startCleanup } from "./cleanup.js";
 import { deriveBotSecret } from "./derive-key.js";
 import { loadBots } from "./load-bots.js";
 import { renderPage } from "./page.js";
@@ -63,6 +64,8 @@ const server = createServer((req, res) => {
   res.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
   res.end("Not found");
 });
+
+startCleanup();
 
 server.listen(8080, "0.0.0.0", () => {
   console.log("Directory http://0.0.0.0:8080");

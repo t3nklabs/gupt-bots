@@ -1,4 +1,4 @@
-import { readdir, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import { BOT_TMP_DIR } from "./tmp.js";
@@ -31,4 +31,26 @@ export async function deleteOldBotFiles(
     }
   }
   return removed;
+}
+
+export function startCleanup({
+  intervalMs = Number(process.env.CLEANUP_INTERVAL_MS) || 60 * 60 * 1000,
+} = {}) {
+  async function sweep() {
+    const removed = await deleteOldBotFiles();
+    console.log(
+      `[cleanup] ${BOT_TMP_DIR}: removed ${removed} item(s) older than ${FILE_MAX_AGE_MS / 86400000} days`,
+    );
+  }
+
+  mkdir(BOT_TMP_DIR, { recursive: true })
+    .then(() => sweep())
+    .catch((error) => console.error("[cleanup]", error.message));
+
+  const timer = setInterval(() => {
+    sweep().catch((error) => console.error("[cleanup]", error.message));
+  }, intervalMs);
+  timer.unref?.();
+  console.log(`[cleanup] watching ${BOT_TMP_DIR} every ${intervalMs / 1000}s`);
+  return timer;
 }
