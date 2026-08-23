@@ -1,7 +1,6 @@
 services:
   gupt-bots:
-    build: .
-    image: gupt-bots
+    image: ghcr.io/t3nklabs/gupt-bots:latest
     container_name: gupt-bots
     ports:
       - "8080:8080"
