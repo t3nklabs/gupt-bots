@@ -1,10 +1,12 @@
 services:
   gupt-bots:
     build: .
+    image: gupt-bots
+    container_name: gupt-bots
     ports:
       - "8080:8080"
+    env_file:
+      - .env
     environment:
-      privatekey: ${privatekey}
-      GUPT_RELAYS: ${GUPT_RELAYS:-}
       PORT: "8080"
     restart: unless-stopped

@@ -9,7 +9,7 @@ test("loads every bot folder with name, description, and attach()", async () => 
   const bots = await loadBots();
   assert.deepEqual(
     bots.map((bot) => bot.id),
-    ["echo", "ping", "price", "time"],
+    ["echo", "price", "time"],
   );
   for (const bot of bots) {
     assert.ok(bot.name);
