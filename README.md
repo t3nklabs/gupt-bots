@@ -5,18 +5,15 @@ Each folder under `bots/` is one GUPT bot. Its private key is `sha256(privatekey
 ## Run with Podman
 
 ```bash
-cp .env.example .env
-# put a long secret in privatekey=
-
-docker compose up --build -d
-# or: podman compose up --build -d
+privatekey='your-long-secret' docker compose up --build -d
+# or: privatekey='your-long-secret' podman compose up --build -d
 ```
 
 Without Compose:
 
 ```bash
 podman build -t gupt-bots .
-podman run --rm --env-file .env -p 8080:8080 gupt-bots
+podman run --rm -e privatekey='your-long-secret' -p 8080:8080 gupt-bots
 ```
 
 Then open [http://localhost:8080](http://localhost:8080) for names, descriptions, and public keys.

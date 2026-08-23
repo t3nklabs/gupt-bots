@@ -15,7 +15,6 @@ COPY src ./src
 COPY bots ./bots
 
 ENV NODE_ENV=production
-ENV PORT=8080
 
 USER node
 EXPOSE 8080

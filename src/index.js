@@ -38,7 +38,6 @@ for (const spec of specs) {
 
 const html = renderPage(directory);
 const json = JSON.stringify({ bots: directory });
-const port = Number(process.env.PORT) || 8080;
 
 const server = createServer((req, res) => {
   const path = new URL(req.url || "/", "http://localhost").pathname;
@@ -65,8 +64,8 @@ const server = createServer((req, res) => {
   res.end("Not found");
 });
 
-server.listen(port, "0.0.0.0", () => {
-  console.log(`Directory http://0.0.0.0:${port}`);
+server.listen(8080, "0.0.0.0", () => {
+  console.log("Directory http://0.0.0.0:8080");
 });
 
 function shutdown() {

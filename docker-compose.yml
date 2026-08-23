@@ -5,8 +5,7 @@ services:
     container_name: gupt-bots
     ports:
       - "8080:8080"
-    env_file:
-      - .env
     environment:
-      PORT: "8080"
+      privatekey: ${privatekey:?set privatekey}
+      GUPT_RELAYS: ${GUPT_RELAYS:-}
     restart: unless-stopped
