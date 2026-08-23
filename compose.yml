@@ -1,0 +1,10 @@
+services:
+  gupt-bots:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      privatekey: ${privatekey}
+      GUPT_RELAYS: ${GUPT_RELAYS:-}
+      PORT: "8080"
+    restart: unless-stopped

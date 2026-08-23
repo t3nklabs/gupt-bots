@@ -1,0 +1,17 @@
+{
+  "name": "gupt-bots",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "GUPT bots with deterministic keys and a public directory page",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "dependencies": {
+    "gupt-sdk": "^0.1.0"
+  }
+}
