@@ -20,7 +20,7 @@ const instances = [];
 
 for (const spec of specs) {
   const secretHex = deriveBotSecret(masterKey, spec.id);
-  const bot = new GuptBot({ secretHex, relays });
+  const bot = new GuptBot({ secretHex, relays, ...spec.botOptions });
   spec.attach(bot);
   bot.onError((error, context) => {
     console.error(`[${spec.id}]`, error.message, context);

@@ -22,6 +22,7 @@ export async function loadBots() {
       id: entry.name,
       name: String(mod.name || entry.name),
       description: String(mod.description || ""),
+      botOptions: mod.botOptions && typeof mod.botOptions === "object" ? mod.botOptions : {},
       attach,
     });
   }
