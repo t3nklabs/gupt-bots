@@ -8,7 +8,6 @@ services:
     environment:
       privatekey: ${privatekey:?set privatekey}
       GUPT_RELAYS: ${GUPT_RELAYS:-}
-      BOT_TMP_DIR: /tmp/gupt-bots
     volumes:
       - gupt-tmp:/tmp/gupt-bots
     restart: unless-stopped

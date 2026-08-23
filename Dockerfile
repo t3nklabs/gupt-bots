@@ -17,7 +17,6 @@ COPY docker-entrypoint.sh /docker-entrypoint.sh
 RUN chmod +x /docker-entrypoint.sh
 
 ENV NODE_ENV=production
-ENV BOT_TMP_DIR=/tmp/gupt-bots
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
 EXPOSE 8080
