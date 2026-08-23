@@ -6,6 +6,7 @@
   "description": "GUPT bots with deterministic keys and a public directory page",
   "scripts": {
     "start": "node src/index.js",
+    "cleanup": "node src/cleanup-worker.js",
     "test": "node --test \"test/*.test.mjs\""
   },
   "engines": {

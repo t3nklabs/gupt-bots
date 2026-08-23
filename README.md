@@ -18,6 +18,8 @@ podman run --rm -e privatekey='your-long-secret' -p 8080:8080 gupt-bots
 
 Then open [http://localhost:8080](http://localhost:8080) for names, descriptions, and public keys.
 
+Bot files go under `/tmp/gupt-bots`. Compose also starts `gupt-cleanup`, which deletes files older than 30 days.
+
 ## Add a bot
 
 Create `bots/<name>/index.js`:
@@ -32,5 +34,7 @@ export function attach(bot) {
   });
 }
 ```
+
+If a bot writes files, put them in `makeBotTmpDir("botname")` from `src/tmp.js` so they land in `/tmp/gupt-bots`.
 
 The folder name is what gets mixed into the key. Do not rename a folder if you want the same identity.

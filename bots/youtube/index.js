@@ -31,14 +31,10 @@ export function attach(bot) {
       try {
         await ctx.reply("Downloading audio…");
         const file = await downloadM4a(parsed.url);
-        try {
-          await ctx.replyFile(file.path, {
-            name: safeFilename(file.title, parsed.id),
-            mime: "audio/mp4",
-          });
-        } finally {
-          await file.cleanup();
-        }
+        await ctx.replyFile(file.path, {
+          name: safeFilename(file.title, parsed.id),
+          mime: "audio/mp4",
+        });
       } catch (error) {
         const message = error?.message || String(error);
         await ctx.reply(`Could not fetch audio: ${message}`);

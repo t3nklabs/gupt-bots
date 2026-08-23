@@ -1,7 +1,8 @@
-import { mkdtemp, readdir, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
+
+import { makeBotTmpDir } from "../../src/tmp.js";
 
 const HOSTS = new Set(["youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"]);
 const VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -84,7 +85,7 @@ function run(command, args, { timeoutMs = DOWNLOAD_TIMEOUT_MS } = {}) {
 }
 
 export async function downloadM4a(pageUrl, { ytDlp = "yt-dlp" } = {}) {
-  const dir = await mkdtemp(join(tmpdir(), "gupt-yt-"));
+  const dir = await makeBotTmpDir("youtube");
   try {
     const { stdout } = await run(ytDlp, [
       "--no-playlist",
@@ -120,7 +121,7 @@ export async function downloadM4a(pageUrl, { ytDlp = "yt-dlp" } = {}) {
     if (!path) throw new Error("yt-dlp did not produce an m4a file");
 
     const title = lines.find((line) => line !== path) || "audio";
-    return { path, title, cleanup: () => rm(dir, { recursive: true, force: true }) };
+    return { path, title, dir };
   } catch (error) {
     await rm(dir, { recursive: true, force: true });
     throw error;
