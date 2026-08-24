@@ -21,7 +21,12 @@ const instances = [];
 
 for (const spec of specs) {
   const secretHex = deriveBotSecret(masterKey, spec.id);
-  const bot = new GuptBot({ secretHex, relays, ...spec.botOptions });
+  const bot = new GuptBot({
+    secretHex,
+    relays,
+    ...spec.botOptions,
+    publicBot: spec.publicBot,
+  });
   spec.attach(bot);
   bot.onError((error, context) => {
     console.error(`[${spec.id}]`, error.message, context);
@@ -34,7 +39,7 @@ for (const spec of specs) {
     description: spec.description,
     pubkey: bot.pubkey,
   });
-  console.log(`[${spec.id}] ${bot.pubkey}`);
+  console.log(`[${spec.id}] ${bot.pubkey} announced as ${spec.publicBot.name}`);
 }
 
 const html = renderPage(directory);

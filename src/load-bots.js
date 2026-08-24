@@ -18,11 +18,25 @@ export async function loadBots() {
       throw new TypeError(`bots/${entry.name}/index.js must export attach(bot)`);
     }
 
+    const name = String(mod.name || entry.name);
+    const description = String(mod.description || "");
+    const botOptions = mod.botOptions && typeof mod.botOptions === "object" ? { ...mod.botOptions } : {};
+    const publicBot =
+      botOptions.publicBot && typeof botOptions.publicBot === "object"
+        ? botOptions.publicBot
+        : {
+            name,
+            about: description,
+            website: "https://github.com/t3nklabs/gupt-bots",
+          };
+    delete botOptions.publicBot;
+
     bots.push({
       id: entry.name,
-      name: String(mod.name || entry.name),
-      description: String(mod.description || ""),
-      botOptions: mod.botOptions && typeof mod.botOptions === "object" ? mod.botOptions : {},
+      name,
+      description,
+      botOptions,
+      publicBot,
       attach,
     });
   }

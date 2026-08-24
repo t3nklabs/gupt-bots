@@ -12,6 +12,6 @@
     "node": ">=22.12.0"
   },
   "dependencies": {
-    "gupt-sdk": "^0.2.0"
+    "gupt-sdk": "^0.2.3"
   }
 }

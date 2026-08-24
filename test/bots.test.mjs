@@ -15,6 +15,9 @@ test("loads every bot folder with name, description, and attach()", async () => 
     assert.ok(bot.name);
     assert.ok(bot.description);
     assert.equal(typeof bot.attach, "function");
+    assert.equal(bot.publicBot.name, bot.name);
+    assert.equal(bot.publicBot.about, bot.description);
+    assert.equal(bot.publicBot.website, "https://github.com/t3nklabs/gupt-bots");
   }
 });
 
