@@ -5,8 +5,8 @@ Each folder under `bots/` is one GUPT bot. Its private key is `sha256(privatekey
 ## Run with Podman
 
 ```bash
-privatekey='your-long-secret' docker compose up -d
-# or: privatekey='your-long-secret' podman compose up -d
+privatekey='your-long-secret' docker compose up --build -d
+# or: privatekey='your-long-secret' podman compose up --build -d
 ```
 
 Without Compose:
