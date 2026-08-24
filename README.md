@@ -1,6 +1,6 @@
 # GUPT Bots
 
-Each bot has its own identity derived from the host secret and its folder name. Message them from GUPT using the public key below. They also announce `{ name, about }` on start so they appear under **Talk to bot**.
+Each bot has its own identity derived from the host secret and its folder name. Message them from GUPT using the public key below. They also announce `{ name, about, owner, website }` on start so they appear under **Talk to bot**.
 
 ## Echo
 
@@ -86,6 +86,6 @@ export function attach(bot) {
 
 If a bot writes files, put them in `makeBotTmpDir("botname")` from `src/tmp.js` so they land in `/tmp/gupt-bots`.
 
-`name` and `description` are announced to GUPT as `publicBot: { name, about }` on start and every 3 hours.
+`name` and `description` are announced to GUPT as `publicBot: { name, about, owner, website }` on start and every 3 hours. Owner is `a237b2c0d2a651b52b93b5b5cf099c26f95b4311bc004fac80387b65a691dd60`; website is [besoeasy.com](https://besoeasy.com).
 
 The folder name is what gets mixed into the key. Do not rename a folder if you want the same identity.

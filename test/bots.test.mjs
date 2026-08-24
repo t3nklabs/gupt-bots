@@ -17,7 +17,8 @@ test("loads every bot folder with name, description, and attach()", async () => 
     assert.equal(typeof bot.attach, "function");
     assert.equal(bot.publicBot.name, bot.name);
     assert.equal(bot.publicBot.about, bot.description);
-    assert.equal(bot.publicBot.website, "https://github.com/t3nklabs/gupt-bots");
+    assert.equal(bot.publicBot.owner, "a237b2c0d2a651b52b93b5b5cf099c26f95b4311bc004fac80387b65a691dd60");
+    assert.equal(bot.publicBot.website, "https://besoeasy.com");
   }
 });
 

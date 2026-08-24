@@ -3,6 +3,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const BOTS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "bots");
+const PUBLIC_BOT_OWNER = "a237b2c0d2a651b52b93b5b5cf099c26f95b4311bc004fac80387b65a691dd60";
+const PUBLIC_BOT_WEBSITE = "https://besoeasy.com";
 
 export async function loadBots() {
   const entries = await readdir(BOTS_DIR, { withFileTypes: true });
@@ -27,7 +29,8 @@ export async function loadBots() {
         : {
             name,
             about: description,
-            website: "https://github.com/t3nklabs/gupt-bots",
+            owner: PUBLIC_BOT_OWNER,
+            website: PUBLIC_BOT_WEBSITE,
           };
     delete botOptions.publicBot;
 
