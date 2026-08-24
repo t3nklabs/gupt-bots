@@ -19,5 +19,5 @@ RUN chmod +x /docker-entrypoint.sh
 ENV NODE_ENV=production
 
 ENTRYPOINT ["/docker-entrypoint.sh"]
-EXPOSE 8080
+EXPOSE 18080
 CMD ["node", "src/index.js"]

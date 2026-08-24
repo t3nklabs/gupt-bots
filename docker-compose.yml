@@ -3,13 +3,8 @@ services:
     image: ghcr.io/t3nklabs/gupt-bots:latest
     container_name: gupt-bots
     ports:
-      - "8080:8080"
+      - "18080:18080"
     environment:
       privatekey: ${privatekey:?set privatekey}
       GUPT_RELAYS: ${GUPT_RELAYS:-}
-    volumes:
-      - gupt-tmp:/tmp/gupt-bots
     restart: unless-stopped
-
-volumes:
-  gupt-tmp:

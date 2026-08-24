@@ -12,10 +12,10 @@ privatekey='your-long-secret' docker compose up -d
 Without Compose:
 
 ```bash
-podman run --rm -e privatekey='your-long-secret' -p 8080:8080 ghcr.io/t3nklabs/gupt-bots:latest
+podman run --rm -e privatekey='your-long-secret' -p 18080:18080 ghcr.io/t3nklabs/gupt-bots:latest
 ```
 
-Then open [http://localhost:8080](http://localhost:8080) for names, descriptions, and public keys.
+Then open [http://localhost:18080](http://localhost:18080) for names, descriptions, and public keys.
 
 Bot files go under `/tmp/gupt-bots`. The same process deletes files older than 30 days.
 

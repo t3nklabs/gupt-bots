@@ -67,8 +67,8 @@ const server = createServer((req, res) => {
 
 startCleanup();
 
-server.listen(8080, "0.0.0.0", () => {
-  console.log("Directory http://0.0.0.0:8080");
+server.listen(18080, "0.0.0.0", () => {
+  console.log("Directory http://0.0.0.0:18080");
 });
 
 function shutdown() {
