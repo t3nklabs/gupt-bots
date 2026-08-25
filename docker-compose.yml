@@ -1,11 +1,9 @@
 services:
   gupt-bots:
-    build: https://github.com/t3nklabs/gupt-bots.git#main
+    build: .
     image: gupt-bots
-    container_name: gupt-bots
     ports:
       - "18080:18080"
     environment:
       privatekey: ${privatekey:?set privatekey}
-      GUPT_RELAYS: ${GUPT_RELAYS:-}
     restart: unless-stopped
