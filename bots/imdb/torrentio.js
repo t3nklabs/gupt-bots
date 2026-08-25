@@ -19,14 +19,51 @@ export function magnetFor(stream) {
   return `magnet:?xt=urn:btih:${hash}`;
 }
 
+export function parseStreamTitle(title) {
+  const lines = String(title || "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const metadata = lines.find((line) => /👤|💾|⚙️/.test(line)) || "";
+  const titleLines = lines.filter((line) => line !== metadata);
+  const seeders = metadata.match(/👤\s*([\d,]+)/)?.[1] || "";
+  const size = metadata.match(/💾\s*([^\s]+(?:\s+[KMGT]B)?)/i)?.[1] || "";
+  const source = metadata.match(/⚙️\s*(.+)$/)?.[1]?.trim() || "";
+
+  return {
+    title: titleLines.shift() || "Untitled stream",
+    notes: titleLines,
+    seeders,
+    size,
+    source,
+  };
+}
+
 export function formatStream(stream, index, total) {
   const quality = String(stream?.name || "stream")
     .replace(/^Torrentio\s*/i, "")
     .replace(/\s+/g, " ")
     .trim();
-  const title = String(stream?.title || "").trim();
+  const details = parseStreamTitle(stream?.title);
   const link = magnetFor(stream);
-  const body = [`${index}/${total} ${quality}`, title, link].filter(Boolean).join("\n");
+  const metadata = [
+    details.seeders && `Seeders: ${details.seeders}`,
+    details.size && `Size: ${details.size}`,
+    details.source && `Source: ${details.source}`,
+  ]
+    .filter(Boolean)
+    .join(" | ");
+  const filename = String(stream?.behaviorHints?.filename || "").trim();
+  const body = [
+    `${index}/${total} | ${quality || "Stream"}`,
+    details.title,
+    metadata,
+    ...details.notes.map((note) => `Notes: ${note}`),
+    filename && `File: ${filename}`,
+    link && `Magnet: ${link}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
   return body.length <= MAX_TEXT ? body : `${body.slice(0, MAX_TEXT - 1)}…`;
 }
 

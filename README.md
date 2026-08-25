@@ -52,6 +52,12 @@ a680a4336469de0810ecbcdedf7f511531008d9e3e13471ebd3bb75c8888d7ff
 
 [Open on gupt.app](https://gupt.app/#/profile/a680a4336469de0810ecbcdedf7f511531008d9e3e13471ebd3bb75c8888d7ff)
 
+## Weather
+
+`weather` — Send a city or location to get the current weather.
+
+The public key is generated from the configured `privatekey` when the bot starts.
+
 ## Run with Podman
 
 ```bash
