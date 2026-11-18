@@ -2,11 +2,15 @@ import assert from "node:assert/strict";
 import {
   availableQualities,
   buildMagnet,
+  clearTorrentCache,
   extractImdbId,
   extractQualityCommand,
+  fetchMovieMeta,
+  fetchTorrents,
   formatResultMessages,
   parseStream,
   rankStreams,
+  torrentCacheSize,
 } from "../src/bots/torrent.js";
 
 const HASH_A = "c3da9a3dc2ce14d0d4fc0e87d1b2023502f8dcd6";
@@ -163,6 +167,83 @@ async function runTests() {
   assert.ok(long[1].includes("…"), "release name shortened with an ellipsis");
   assert.ok(long[1].length < 1200, "entry stays small");
   console.log("✅ Check 14: Absurd release names are truncated");
+
+  // 15. Seeder floor of 2: 0, 1 and unknown counts are excluded
+  const seeded = [
+    stream({ infoHash: HASH_A, title: "One\n👤 1 💾 1 GB ⚙️ YTS" }),
+    stream({ infoHash: HASH_B, title: "Two\n👤 2 💾 1 GB ⚙️ YTS" }),
+    stream({ infoHash: HASH_C, title: "Zero\n👤 0 💾 1 GB ⚙️ YTS" }),
+  ];
+  const floored = rankStreams(seeded);
+  assert.equal(floored.length, 1);
+  assert.equal(floored[0].infoHash, HASH_B);
+  assert.equal(rankStreams([stream({ infoHash: HASH_A, title: "No stats" })]).length, 0);
+  assert.equal(rankStreams(seeded, { maxResults: 10, minSeeders: 0 }).length, 3);
+  console.log("✅ Check 15: Only torrents with 2+ seeders are returned");
+
+  // 16. Cap at 100 results
+  const many = Array.from({ length: 130 }, (_, i) =>
+    stream({
+      infoHash: String(i).padStart(40, "a"),
+      title: `Many ${i}\n👤 ${i + 2} 💾 1 GB ⚙️ YTS`,
+    }),
+  );
+  const manyMessages = formatResultMessages({ meta: { name: "Many" }, imdbId: "tt0111161", streams: many });
+  assert.equal(manyMessages.length, 101, "one header plus 100 results");
+  assert.ok(manyMessages[0].includes("130 torrents indexed"));
+  assert.ok(manyMessages[0].includes("130 with 2+ seeders"));
+  assert.ok(manyMessages[0].includes("capped at 100"));
+  assert.ok(manyMessages[1].includes("**#1 of 100**"));
+  assert.ok(manyMessages[100].includes("**#100 of 100**"));
+  console.log("✅ Check 16: Results are capped at 100 with a clear header");
+
+  // 17. Lookups are cached for an hour
+  clearTorrentCache();
+  let calls = 0;
+  globalThis.fetch = async (url) => {
+    calls++;
+    return { ok: true, json: async () => ({ streams: [stream()], meta: { name: "Cached" } }) };
+  };
+  const now = Date.now();
+  const first = await fetchTorrents("tt1111111");
+  const second = await fetchTorrents("tt1111111");
+  assert.equal(calls, 1, "second lookup inside the hour hits the cache");
+  assert.equal(first, second, "cache returns the same payload");
+
+  Date.now = () => now + 60 * 60 * 1000 + 1;
+  await fetchTorrents("tt1111111");
+  assert.equal(calls, 2, "expired entry refetches");
+  Date.now = () => now;
+  clearTorrentCache();
+  assert.equal(torrentCacheSize(), 0);
+  console.log("✅ Check 17: Torrentio results cached for 1 hour, then expire");
+
+  // 18. Concurrent misses share one upstream request
+  clearTorrentCache();
+  calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    await new Promise((r) => setTimeout(r, 50));
+    return { ok: true, json: async () => ({ meta: { name: "Shared" } }) };
+  };
+  const [a, b] = await Promise.all([fetchMovieMeta("tt2222222"), fetchMovieMeta("tt2222222")]);
+  assert.equal(calls, 1, "in-flight lookups are coalesced");
+  assert.equal(a.name, "Shared");
+  assert.equal(b.name, "Shared");
+  console.log("✅ Check 18: Concurrent lookups of the same movie share one request");
+
+  // 19. Metadata failures are not cached, so a blip does not stick for an hour
+  clearTorrentCache();
+  calls = 0;
+  globalThis.fetch = async () => {
+    calls++;
+    return { ok: false, json: async () => ({}) };
+  };
+  assert.equal(await fetchMovieMeta("tt3333333"), null);
+  assert.equal(await fetchMovieMeta("tt3333333"), null);
+  assert.equal(calls, 2, "failed metadata lookups retry");
+  assert.equal(torrentCacheSize(), 0);
+  console.log("✅ Check 19: Failed metadata lookups are never cached");
 
   console.log("\n🎉 ALL TORRENT BOT TESTS PASSED!");
 }

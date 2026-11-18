@@ -217,15 +217,22 @@ The Torrent Bot answers IMDb movie links and ids with magnet links from the publ
   `magnet:` URI therefore cannot be a button or a link — it is sent inside a fenced
   code block so the user can copy it. Trackers are appended as `&tr=` params from the
   stream's `sources`, dropped when the URI would exceed 500 chars.
-* **Selection:** results are deduped by info hash, sorted by seeders, capped by
-  `TORRENT_RESULTS` (default 5) and trimmed to stay under the 7,000-char budget that
-  keeps clear of the client's 8,000-char `MAX_FORMAT_LENGTH`.
+* **Selection:** only streams with a known seeder count of `TORRENT_MIN_SEEDERS` or more
+  (default 2) are returned — unknown counts are dropped because they cannot be proven to
+  clear the floor. Results are deduped by info hash, sorted by seeders, and capped by
+  `TORRENT_RESULTS` (default and maximum 100).
+* **Cache:** Torrentio streams and Cinemeta metadata are kept in a small in-process TTL
+  cache (`TORRENT_CACHE_TTL_MS`, default 1 hour, max 200 entries, pruned on write).
+  Concurrent misses for the same id share one request through an in-flight map, and
+  failed metadata lookups are never cached.
 * **Delivery:** one DM per torrent (`formatResultMessages()` returns the messages; the
   handler publishes them in order with a `TORRENT_MESSAGE_DELAY_MS` gap, default 200ms,
   so relays that sort by the second keep the numbering stable). A summary message with
   the IMDb button comes first; each entry repeats the movie title, `#n of m`, quality,
   size, seeders, source, a truncated release name and exactly one magnet in a code
   block. A failed follow-up message is logged and skipped rather than aborting the rest.
+  With 100 results that is 101 relay writes, so `TORRENT_MESSAGE_DELAY_MS=0` is the
+  sensible setting for bulk dumps.
 * **Quality filter:** an optional leading `4k` / `2160p` / `1440p` / `1080p` / `720p` /
   `480p` / `cam` token narrows the list; `4k` and `2160p` are aliases. Unmatched filters
   answer with the qualities that do exist.

@@ -2,8 +2,11 @@ import { sendTextReply } from "../relay.js";
 
 const TORRENTIO_BASE = (process.env.TORRENTIO_BASE || "https://torrentio.strem.fun").replace(/\/+$/, "");
 const CINEMETA_BASE = (process.env.CINEMETA_BASE || "https://v3-cinemeta.strem.io").replace(/\/+$/, "");
-const MAX_RESULTS = clampInt(process.env.TORRENT_RESULTS, 5, 1, 10);
+const MAX_RESULTS = clampInt(process.env.TORRENT_RESULTS, 100, 1, 100);
+const MIN_SEEDERS = clampInt(process.env.TORRENT_MIN_SEEDERS, 2, 0, 1000);
 const MESSAGE_DELAY_MS = clampInt(process.env.TORRENT_MESSAGE_DELAY_MS, 200, 0, 2000);
+const CACHE_TTL_MS = clampInt(process.env.TORRENT_CACHE_TTL_MS, 60 * 60 * 1000, 0, 24 * 60 * 60 * 1000);
+const CACHE_MAX_ENTRIES = 200;
 const FETCH_TIMEOUT_MS = 15000;
 // Gupt's message formatter stops at 8000 chars; leave room for the footer.
 const MESSAGE_BUDGET_CHARS = 7000;
@@ -43,6 +46,64 @@ function clampInt(value, fallback, min, max) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Small TTL cache for upstream lookups. Entries expire after CACHE_TTL_MS so a
+ * blockbuster lookup is served from memory for an hour, then refetched.
+ * Concurrent misses share one request through `inFlight`.
+ */
+const cache = new Map();
+const inFlight = new Map();
+
+function cacheGet(key) {
+  if (CACHE_TTL_MS <= 0) return undefined;
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (hit.expiresAt <= Date.now()) {
+    cache.delete(key);
+    return undefined;
+  }
+  return hit.value;
+}
+
+function cacheSet(key, value) {
+  if (CACHE_TTL_MS <= 0) return;
+  cache.delete(key); // re-insert so Map order tracks recency
+  cache.set(key, { value, expiresAt: Date.now() + CACHE_TTL_MS });
+  while (cache.size > CACHE_MAX_ENTRIES) {
+    cache.delete(cache.keys().next().value);
+  }
+}
+
+function loadCached(key, loader) {
+  const hit = cacheGet(key);
+  if (hit !== undefined) return Promise.resolve(hit);
+
+  const pending = inFlight.get(key);
+  if (pending) return pending;
+
+  const promise = Promise.resolve()
+    .then(loader)
+    .then((value) => {
+      if (value !== null && value !== undefined) cacheSet(key, value);
+      return value;
+    })
+    .finally(() => inFlight.delete(key));
+
+  inFlight.set(key, promise);
+  return promise;
+}
+
+/** Drop every cached lookup (tests, or an ops "flush" on restart) */
+export function clearTorrentCache() {
+  cache.clear();
+  inFlight.clear();
+}
+
+/** Inspect cache size; used by tests */
+export function torrentCacheSize() {
+  return cache.size;
 }
 
 /** Pull the IMDb id out of a link, a bare id, or any text containing one */
@@ -133,13 +194,18 @@ export function buildMagnet(entry) {
 }
 
 /** Keep one entry per torrent hash, best seeder count first */
-export function rankStreams(streams, { quality = null, maxResults = MAX_RESULTS } = {}) {
+export function rankStreams(
+  streams,
+  { quality = null, maxResults = MAX_RESULTS, minSeeders = MIN_SEEDERS } = {},
+) {
   const wanted = quality ? QUALITY_ALIASES[quality] || [quality] : null;
   const best = new Map();
 
   for (const stream of streams || []) {
     if (!stream?.infoHash) continue;
     const entry = parseStream(stream);
+    // Unknown seeder counts are dropped too: we cannot prove they clear the floor.
+    if (entry.seeders === null || entry.seeders < minSeeders) continue;
     if (wanted && !wanted.some((tag) => entry.quality.toLowerCase().includes(tag))) continue;
 
     const current = best.get(entry.infoHash);
@@ -153,12 +219,13 @@ export function rankStreams(streams, { quality = null, maxResults = MAX_RESULTS 
     .slice(0, maxResults);
 }
 
-/** Distinct resolution buckets present, for the "nothing matched your filter" reply */
-export function availableQualities(streams) {
+/** Distinct resolution buckets present among results that clear the seeder floor */
+export function availableQualities(streams, minSeeders = MIN_SEEDERS) {
   const buckets = [];
   for (const stream of streams || []) {
-    const quality = parseStream(stream).quality;
-    const match = quality.match(/\b(4k|2160p|1440p|1080p|720p|480p|360p|cam)\b/i);
+    const entry = parseStream(stream);
+    if (entry.seeders === null || entry.seeders < minSeeders) continue;
+    const match = entry.quality.match(/\b(4k|2160p|1440p|1080p|720p|480p|360p|cam)\b/i);
     if (!match) continue;
     const label = match[1].toLowerCase() === "2160p" ? "4k" : match[1].toLowerCase();
     if (!buckets.includes(label)) buckets.push(label);
@@ -177,7 +244,7 @@ function truncate(value, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-function headerMessage({ meta, imdbId, entries, total, quality }) {
+function headerMessage({ meta, imdbId, entries, total, qualified, quality }) {
   const title = plain(meta?.name) || imdbId;
   const year = yearOf(meta);
   const facts = [
@@ -189,10 +256,14 @@ function headerMessage({ meta, imdbId, entries, total, quality }) {
     .join(" · ");
 
   const scope = quality ? ` matching ${quality}` : "";
+  const capped = qualified > entries.length ? ` (capped at ${entries.length})` : "";
+  const floor = MIN_SEEDERS > 0 ? ` with ${MIN_SEEDERS}+ seeders` : "";
+  const cacheNote = CACHE_TTL_MS > 0 ? ` Cached for ${Math.round(CACHE_TTL_MS / 60000)} min.` : "";
   const lines = [`🎬 **${title}**${year ? ` (${year})` : ""}`];
   if (facts) lines.push(facts);
   lines.push(
-    `\n${total} torrents indexed${scope} — sending the ${entries.length} best-seeded, one per message.`,
+    `\n${total} torrents indexed${scope} · ${qualified}${floor}`,
+    `Sending ${entries.length === 1 ? "1 result" : `all ${entries.length}`}${capped}, one per message.${cacheNote}`,
     `Magnet links are copy-only: Gupt only opens http(s) links.`,
     `\n{{button "Open on IMDb" https://www.imdb.com/title/${imdbId}/}}`,
   );
@@ -226,11 +297,19 @@ function entryMessage({ entry, index, total, meta, imdbId }) {
  * copied or forwarded without dragging the rest of the list along.
  */
 export function formatResultMessages({ meta, imdbId, streams, quality, maxResults = MAX_RESULTS }) {
-  const entries = rankStreams(streams, { quality, maxResults });
-  if (!entries.length) return [];
+  const qualified = rankStreams(streams, { quality, maxResults: Number.POSITIVE_INFINITY });
+  if (!qualified.length) return [];
+  const entries = qualified.slice(0, maxResults);
 
   const messages = [
-    headerMessage({ meta, imdbId, entries, total: streams.length, quality }),
+    headerMessage({
+      meta,
+      imdbId,
+      entries,
+      total: streams.length,
+      qualified: qualified.length,
+      quality,
+    }),
   ];
 
   for (const [index, entry] of entries.entries()) {
@@ -242,35 +321,41 @@ export function formatResultMessages({ meta, imdbId, streams, quality, maxResult
 }
 
 export async function fetchMovieMeta(imdbId) {
-  try {
-    const res = await fetch(`${CINEMETA_BASE}/meta/movie/${imdbId}.json`, {
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const meta = (await res.json())?.meta;
-    return meta?.name ? meta : null;
-  } catch {
-    return null;
-  }
+  return loadCached(`meta:${imdbId}`, async () => {
+    try {
+      const res = await fetch(`${CINEMETA_BASE}/meta/movie/${imdbId}.json`, {
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) return null;
+      const meta = (await res.json())?.meta;
+      return meta?.name ? meta : null;
+    } catch {
+      return null;
+    }
+  });
 }
 
 export async function fetchTorrents(imdbId) {
-  const res = await fetch(`${TORRENTIO_BASE}/stream/movie/${imdbId}.json`, {
-    signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+  return loadCached(`streams:${imdbId}`, async () => {
+    const res = await fetch(`${TORRENTIO_BASE}/stream/movie/${imdbId}.json`, {
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    });
+    if (!res.ok) throw new Error(`Torrentio returned HTTP ${res.status}`);
+    const data = await res.json();
+    return Array.isArray(data?.streams) ? data.streams : [];
   });
-  if (!res.ok) throw new Error(`Torrentio returned HTTP ${res.status}`);
-  const data = await res.json();
-  return Array.isArray(data?.streams) ? data.streams : [];
 }
 
 const HELP_TEXT =
   `🎬 **Torrent Bot**\n\n` +
-  `Send an IMDb link (or just the id) and I'll return the best-seeded torrents as magnet links.\n\n` +
+  `Send an IMDb link (or just the id) and I'll return every torrent with ` +
+  `${MIN_SEEDERS}+ seeders as magnet links, best first (up to ${MAX_RESULTS}).\n\n` +
   `**Examples:**\n` +
   `• \`https://www.imdb.com/title/tt0111161/\`\n` +
   `• \`tt0111161\`\n` +
   `• \`1080p tt0111161\` — filter by quality (\`4k\`, \`1080p\`, \`720p\`, \`cam\`)\n\n` +
-  `Each result arrives as its own message, so you can forward just the one you want.\n\n` +
+  `Each result arrives as its own message, so you can forward just the one you want. ` +
+  `Lookups are cached for ${Math.round(CACHE_TTL_MS / 60000)} minutes.\n\n` +
   `_Results come from the public Torrentio index. Download only what you have the right to._`;
 
 export async function handleTorrentMessage({ text, sender, relays, botKey, ttlSeconds }) {
@@ -313,12 +398,25 @@ export async function handleTorrentMessage({ text, sender, relays, botKey, ttlSe
 
     const messages = formatResultMessages({ meta, imdbId, streams, quality });
     if (!messages.length) {
+      const withoutFilter = rankStreams(streams, { maxResults: 1 });
+      if (!withoutFilter.length) {
+        await sendTextReply(
+          relays,
+          botKey,
+          sender,
+          `🔍 **${imdbId}** has ${streams.length} indexed torrents, but none with ${MIN_SEEDERS}+ seeders right now.\n\n` +
+            `Try again later — seeders fluctuate.`,
+          { source: "torrent-bot", ttlSeconds },
+        );
+        return;
+      }
+
       const available = availableQualities(streams);
       await sendTextReply(
         relays,
         botKey,
         sender,
-        `🔍 No **${quality}** torrents for **${imdbId}**.\n\n` +
+        `🔍 No **${quality}** torrents with ${MIN_SEEDERS}+ seeders for **${imdbId}**.\n\n` +
           `Available qualities: ${available.map((q) => `\`${q}\``).join(", ")}`,
         { source: "torrent-bot", ttlSeconds },
       );

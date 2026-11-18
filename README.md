@@ -33,7 +33,7 @@ Send an IMDb movie link (or just the id) and get the best-seeded torrents from t
 - **IMDb Link:** `https://www.imdb.com/title/tt0111161/` — the id is parsed automatically.
 - **Bare Id:** `tt0111161`.
 - **Quality Filter:** Prefix with `4k`, `1440p`, `1080p`, `720p`, `480p` or `cam` (e.g. `1080p tt0111161`).
-- Results are deduped, sorted by seeders, capped at 5, and annotated with size and source.
+- Results are deduped, sorted by seeders, **only torrents with 2+ seeders**, capped at 100. Lookups are cached for 1 hour.
 - **Delivery:** one DM per torrent, preceded by a summary card with the IMDb button — each result can be copied or forwarded on its own.
 - *Magnet URIs are sent inside code blocks because Gupt only renders `http(s)` links as clickable.*
 
@@ -138,5 +138,7 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `YTDLP_PATH` | `yt-dlp` | Path to yt-dlp binary |
 | `TORRENTIO_BASE` | `https://torrentio.strem.fun` | Torrentio addon base URL (self-host or mirror) |
 | `CINEMETA_BASE` | `https://v3-cinemeta.strem.io` | Cinemeta metadata base URL |
-| `TORRENT_RESULTS` | `5` | Torrents per reply (1–10) |
+| `TORRENT_RESULTS` | `100` | Max torrents per request (1–100) |
+| `TORRENT_MIN_SEEDERS` | `2` | Drop torrents below this seeder count (unknown counts are dropped too) |
+| `TORRENT_CACHE_TTL_MS` | `3600000` (1h) | How long Torrentio/Cinemeta lookups stay cached; `0` disables |
 | `TORRENT_MESSAGE_DELAY_MS` | `200` | Pause between the per-torrent DMs (0–2000) so they stay ordered |
