@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import { sendTextReply, sendMediaReply } from "../relay.js";
+import { globalMediaQueue } from "../queue.js";
 
 const execFileAsync = promisify(execFile);
 const YTDLP_BIN = process.env.YTDLP_PATH || "yt-dlp";
@@ -102,91 +103,112 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
   }
 
   const isAudio = mode === "audio";
-  const tempDir = path.join(os.tmpdir(), `gupt_ytdlp_${randomUUID()}`);
 
-  try {
-    // Notify user that download started
-    await sendTextReply(
-      relays,
-      botKey,
-      sender,
-      `⏳ Downloading **${isAudio ? "audio (MP3)" : "video (MP4)"}**...\nPlease wait a moment.`,
-      { source: "yt-dlp-bot" },
-    );
+  const queueResult = await globalMediaQueue.enqueue({
+    sender,
+    label: `${mode} ${url}`,
+    onPosition: async (pos) => {
+      await sendTextReply(
+        relays,
+        botKey,
+        sender,
+        `⏳ **Added to queue!**\n\n` +
+        `You are at position **#${pos}** in line (${pos === 1 ? "1 task ahead" : `${pos} tasks ahead`}).\n` +
+        `Your download will begin automatically when it's your turn.`,
+        { source: "yt-dlp-bot" },
+      );
+    },
+    onStart: async () => {
+      await sendTextReply(
+        relays,
+        botKey,
+        sender,
+        `⏳ Downloading **${isAudio ? "audio (MP3)" : "video (MP4)"}**...\nPlease wait a moment.`,
+        { source: "yt-dlp-bot" },
+      );
+    },
+    run: async () => {
+      const tempDir = path.join(os.tmpdir(), `gupt_ytdlp_${randomUUID()}`);
+      try {
+        await mkdir(tempDir, { recursive: true });
+        const outputTemplate = path.join(tempDir, "%(title).100B.%(ext)s");
 
-    await mkdir(tempDir, { recursive: true });
-    const outputTemplate = path.join(tempDir, "%(title).100B.%(ext)s");
+        const args = isAudio
+          ? [
+              "--no-playlist",
+              "-x",
+              "--audio-format", "mp3",
+              "--audio-quality", "0",
+              "--max-filesize", "50M",
+              "-o", outputTemplate,
+              url,
+            ]
+          : [
+              "--no-playlist",
+              "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[ext=mp4]/best",
+              "--merge-output-format", "mp4",
+              "--max-filesize", "50M",
+              "-o", outputTemplate,
+              url,
+            ];
 
-    const args = isAudio
-      ? [
-          "--no-playlist",
-          "-x",
-          "--audio-format", "mp3",
-          "--audio-quality", "0",
-          "--max-filesize", "50M",
-          "-o", outputTemplate,
-          url,
-        ]
-      : [
-          "--no-playlist",
-          "-f", "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best[ext=mp4]/best",
-          "--merge-output-format", "mp4",
-          "--max-filesize", "50M",
-          "-o", outputTemplate,
-          url,
-        ];
+        console.log(`[yt-dlp] Running: ${YTDLP_BIN} ${args.join(" ")}`);
+        await execFileAsync(YTDLP_BIN, args, { timeout: 180000 });
 
-    console.log(`[yt-dlp] Running: ${YTDLP_BIN} ${args.join(" ")}`);
-    await execFileAsync(YTDLP_BIN, args, { timeout: 180000 });
+        // Find downloaded file
+        const files = await readdir(tempDir);
+        const validFiles = files.filter(
+          (f) => !f.endsWith(".part") && !f.endsWith(".ytdl") && !f.endsWith(".temp"),
+        );
 
-    // Find downloaded file
-    const files = await readdir(tempDir);
-    const validFiles = files.filter(
-      (f) => !f.endsWith(".part") && !f.endsWith(".ytdl") && !f.endsWith(".temp"),
-    );
+        if (!validFiles.length) {
+          throw new Error("No media file was produced by yt-dlp.");
+        }
 
-    if (!validFiles.length) {
-      throw new Error("No media file was produced by yt-dlp.");
-    }
+        const targetFile = validFiles[0];
+        const targetPath = path.join(tempDir, targetFile);
+        const fileStat = await stat(targetPath);
 
-    const targetFile = validFiles[0];
-    const targetPath = path.join(tempDir, targetFile);
-    const fileStat = await stat(targetPath);
+        if (fileStat.size === 0) {
+          throw new Error("Downloaded file is empty.");
+        }
 
-    if (fileStat.size === 0) {
-      throw new Error("Downloaded file is empty.");
-    }
+        if (fileStat.size > MAX_FILE_SIZE_BYTES) {
+          throw new Error(`Downloaded file (${(fileStat.size / (1024 * 1024)).toFixed(1)}MB) exceeds 50MB limit.`);
+        }
 
-    if (fileStat.size > MAX_FILE_SIZE_BYTES) {
-      throw new Error(`Downloaded file (${(fileStat.size / (1024 * 1024)).toFixed(1)}MB) exceeds 50MB limit.`);
-    }
+        console.log(`[yt-dlp] Uploading and sending ${targetFile} (${fileStat.size} bytes) to ${sender.slice(0, 12)}...`);
 
-    console.log(`[yt-dlp] Uploading and sending ${targetFile} (${fileStat.size} bytes) to ${sender.slice(0, 12)}...`);
+        const result = await sendMediaReply(
+          relays,
+          botKey,
+          sender,
+          targetPath,
+          targetFile,
+          { source: "yt-dlp-bot" },
+        );
 
-    const result = await sendMediaReply(
-      relays,
-      botKey,
-      sender,
-      targetPath,
-      targetFile,
-      { source: "yt-dlp-bot" },
-    );
+        if (!result.ok) {
+          throw new Error(result.error || "Failed to publish media event to relay.");
+        }
 
-    if (!result.ok) {
-      throw new Error(result.error || "Failed to publish media event to relay.");
-    }
+        console.log(`[yt-dlp] Successfully delivered media to ${sender.slice(0, 12)}`);
+      } catch (err) {
+        console.error(`[yt-dlp] Error processing ${url}:`, err);
+        await sendTextReply(
+          relays,
+          botKey,
+          sender,
+          `❌ **Download failed**\n\n${cleanError(err)}`,
+          { source: "yt-dlp-bot" },
+        );
+      } finally {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  });
 
-    console.log(`[yt-dlp] Successfully delivered media to ${sender.slice(0, 12)}`);
-  } catch (err) {
-    console.error(`[yt-dlp] Error processing ${url}:`, err);
-    await sendTextReply(
-      relays,
-      botKey,
-      sender,
-      `❌ **Download failed**\n\n${cleanError(err)}`,
-      { source: "yt-dlp-bot" },
-    );
-  } finally {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  if (!queueResult.ok) {
+    await sendTextReply(relays, botKey, sender, queueResult.message, { source: "yt-dlp-bot" });
   }
 }

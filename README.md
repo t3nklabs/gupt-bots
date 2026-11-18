@@ -30,6 +30,17 @@ Downloads songs with embedded **album cover art, artist, and track metadata** as
 
 ---
 
+## 🚦 In-Memory Anti-Spam Job Queue (`src/queue.js`)
+
+To keep the bots spam-free and protect against network/disk exhaustion:
+* **Single Concurrency (1 task at a time):** Heavy media downloads process one at a time.
+* **Queue Notifications:** If a job is already in progress, new requests are queued, and the user is told their position (e.g. `⏳ You are at position #1 in line`).
+* **Auto-Start:** When preceding tasks complete, the next job begins automatically and informs the user.
+* **Per-User Limits:** Each user can have only 1 active or queued download at a time. Repeat requests while one is pending are rejected.
+* **Non-Blocking Commands:** Lightweight queries (`help`, crypto price checks) bypass the queue and answer instantly.
+
+---
+
 ## 🚀 Quick Start
 
 ### Using Docker / Podman

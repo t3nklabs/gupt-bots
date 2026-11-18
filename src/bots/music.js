@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import { sendTextReply, sendMediaReply } from "../relay.js";
+import { globalMediaQueue } from "../queue.js";
 
 const execFileAsync = promisify(execFile);
 const YTDLP_BIN = process.env.YTDLP_PATH || "yt-dlp";
@@ -126,83 +127,104 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
     searchQuery = `${cleaned} audio`;
   }
 
-  const tempDir = path.join(os.tmpdir(), `gupt_music_${randomUUID()}`);
+  const queueResult = await globalMediaQueue.enqueue({
+    sender,
+    label: `music: ${trackLabel}`,
+    onPosition: async (pos) => {
+      await sendTextReply(
+        relays,
+        botKey,
+        sender,
+        `⏳ **Added to queue!**\n\n` +
+        `You are at position **#${pos}** in line (${pos === 1 ? "1 song ahead" : `${pos} songs ahead`}).\n` +
+        `Your music download will begin automatically when it's your turn.`,
+        { source: "spotdl-bot" },
+      );
+    },
+    onStart: async () => {
+      await sendTextReply(
+        relays,
+        botKey,
+        sender,
+        `⏳ Downloading **${trackLabel}** with embedded album art & metadata...\nPlease wait a moment.`,
+        { source: "spotdl-bot" },
+      );
+    },
+    run: async () => {
+      const tempDir = path.join(os.tmpdir(), `gupt_music_${randomUUID()}`);
+      try {
+        await mkdir(tempDir, { recursive: true });
+        const outputTemplate = path.join(tempDir, "%(title).100B.%(ext)s");
 
-  try {
-    await sendTextReply(
-      relays,
-      botKey,
-      sender,
-      `⏳ Downloading **${trackLabel}** with embedded album art & metadata...\nPlease wait a moment.`,
-      { source: "spotdl-bot" },
-    );
+        const inputSource = targetUrl || `ytsearch1:${searchQuery}`;
+        const args = [
+          "--no-playlist",
+          "--embed-metadata",
+          "--embed-thumbnail",
+          "-x",
+          "--audio-format", "mp3",
+          "--audio-quality", "0",
+          "--max-filesize", "50M",
+          "-o", outputTemplate,
+          inputSource,
+        ];
 
-    await mkdir(tempDir, { recursive: true });
-    const outputTemplate = path.join(tempDir, "%(title).100B.%(ext)s");
+        console.log(`[music] Running: ${YTDLP_BIN} ${args.join(" ")}`);
+        await execFileAsync(YTDLP_BIN, args, { timeout: 180000 });
 
-    const inputSource = targetUrl || `ytsearch1:${searchQuery}`;
-    const args = [
-      "--no-playlist",
-      "--embed-metadata",
-      "--embed-thumbnail",
-      "-x",
-      "--audio-format", "mp3",
-      "--audio-quality", "0",
-      "--max-filesize", "50M",
-      "-o", outputTemplate,
-      inputSource,
-    ];
+        const files = await readdir(tempDir);
+        const validFiles = files.filter(
+          (f) => f.endsWith(".mp3") || (!f.endsWith(".part") && !f.endsWith(".ytdl") && !f.endsWith(".temp") && !f.endsWith(".webp")),
+        );
 
-    console.log(`[music] Running: ${YTDLP_BIN} ${args.join(" ")}`);
-    await execFileAsync(YTDLP_BIN, args, { timeout: 180000 });
+        if (!validFiles.length) {
+          throw new Error("No MP3 audio file was produced.");
+        }
 
-    const files = await readdir(tempDir);
-    const validFiles = files.filter(
-      (f) => f.endsWith(".mp3") || (!f.endsWith(".part") && !f.endsWith(".ytdl") && !f.endsWith(".temp") && !f.endsWith(".webp")),
-    );
+        const targetFile = validFiles.find((f) => f.endsWith(".mp3")) || validFiles[0];
+        const targetPath = path.join(tempDir, targetFile);
+        const fileStat = await stat(targetPath);
 
-    if (!validFiles.length) {
-      throw new Error("No MP3 audio file was produced.");
-    }
+        if (fileStat.size === 0) {
+          throw new Error("Downloaded audio file is empty.");
+        }
 
-    const targetFile = validFiles.find((f) => f.endsWith(".mp3")) || validFiles[0];
-    const targetPath = path.join(tempDir, targetFile);
-    const fileStat = await stat(targetPath);
+        if (fileStat.size > MAX_FILE_SIZE_BYTES) {
+          throw new Error(`Audio file exceeds 50MB limit.`);
+        }
 
-    if (fileStat.size === 0) {
-      throw new Error("Downloaded audio file is empty.");
-    }
+        console.log(`[music] Uploading and sending tagged track ${targetFile} (${fileStat.size} bytes) to ${sender.slice(0, 12)}...`);
 
-    if (fileStat.size > MAX_FILE_SIZE_BYTES) {
-      throw new Error(`Audio file exceeds 50MB limit.`);
-    }
+        const result = await sendMediaReply(
+          relays,
+          botKey,
+          sender,
+          targetPath,
+          targetFile,
+          { source: "spotdl-bot", mime: "audio/mpeg" },
+        );
 
-    console.log(`[music] Uploading and sending tagged track ${targetFile} (${fileStat.size} bytes) to ${sender.slice(0, 12)}...`);
+        if (!result.ok) {
+          throw new Error(result.error || "Failed to publish media event to relay.");
+        }
 
-    const result = await sendMediaReply(
-      relays,
-      botKey,
-      sender,
-      targetPath,
-      targetFile,
-      { source: "spotdl-bot", mime: "audio/mpeg" },
-    );
+        console.log(`[music] Successfully delivered track to ${sender.slice(0, 12)}`);
+      } catch (err) {
+        console.error(`[music] Error processing ${trimmed}:`, err);
+        await sendTextReply(
+          relays,
+          botKey,
+          sender,
+          `❌ **Music download failed**\n\n${cleanError(err)}`,
+          { source: "spotdl-bot" },
+        );
+      } finally {
+        await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
+    },
+  });
 
-    if (!result.ok) {
-      throw new Error(result.error || "Failed to publish media event to relay.");
-    }
-
-    console.log(`[music] Successfully delivered track to ${sender.slice(0, 12)}`);
-  } catch (err) {
-    console.error(`[music] Error processing ${trimmed}:`, err);
-    await sendTextReply(
-      relays,
-      botKey,
-      sender,
-      `❌ **Music download failed**\n\n${cleanError(err)}`,
-      { source: "spotdl-bot" },
-    );
-  } finally {
-    await rm(tempDir, { recursive: true, force: true }).catch(() => {});
+  if (!queueResult.ok) {
+    await sendTextReply(relays, botKey, sender, queueResult.message, { source: "spotdl-bot" });
   }
 }

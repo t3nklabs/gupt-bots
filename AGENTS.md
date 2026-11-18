@@ -199,6 +199,16 @@ When sending files (images, audio, video, documents):
 
 ---
 
+## 🚦 In-Memory Anti-Spam Queue System (`src/queue.js`)
+
+Heavy media downloads and processing jobs are serialized with an in-memory `JobQueue`:
+* **Concurrency = 1:** Executes 1 heavy task at a time to prevent CPU, disk, and relay network exhaustion.
+* **Position Notifications:** If a task is executing, incoming jobs receive an immediate DM with their queue position (`⏳ Added to queue! You are at position #1...`).
+* **Per-User Throttling:** Users are restricted to 1 active or queued job at a time. Repeat spam requests are rejected with a helpful warning.
+* **Instant Bypasses:** Quick informational commands (`help`, crypto price lookups) bypass the queue and respond immediately.
+
+---
+
 ## 🛠️ How to Build a New Bot
 
 To build a new bot using this template:
