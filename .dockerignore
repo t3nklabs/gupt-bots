@@ -3,8 +3,4 @@ node_modules
 .env
 *.log
 tmp
-gupt_skill.md
-bots.md
-programmatic-chat.md
-gupt-notify.mjs
-gupt-bot-beacon.mjs
+test

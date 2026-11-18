@@ -2,6 +2,8 @@
 
 Two-way end-to-end encrypted bots built on the [Gupt](https://gupt.app) and [Rabta Relay Protocol](https://gist.githubusercontent.com/besoeasy/098bbed1f63a57a16f208c15155fbf7c/raw/SKILL.md).
 
+> 🤖 **Looking to build your own bot?** Check out [**AGENTS.md**](file:///home/jesus/code/gupt-bots/AGENTS.md) for full architecture specs, wire format documentation, upstream inspection guidelines, and a template walkthrough.
+
 Every boot generates **brand new random cryptographic account keys** for both bots, publishes their public profiles (Kind 0) and directory beacons, and begins listening for encrypted direct messages from users.
 
 ---
