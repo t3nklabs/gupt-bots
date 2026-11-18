@@ -15,6 +15,11 @@ import {
   cryptoProfile,
   cryptoBeacon,
 } from "./bots/crypto.js";
+import {
+  handleMusicMessage,
+  musicProfile,
+  musicBeacon,
+} from "./bots/music.js";
 
 const RELAYS = parseRelays(process.env.GUPT_RELAY);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || "2500", 10);
@@ -29,6 +34,11 @@ const botYtdlp = {
 const botCrypto = {
   ...generateKeypair(),
   name: "Crypto Price Bot",
+};
+
+const botMusic = {
+  ...generateKeypair(),
+  name: "SpotDL Music Bot",
 };
 
 const processedEventIds = new Set();
@@ -66,6 +76,14 @@ function printBanner() {
   Address:      ${botCrypto.address}
   Usage:        Send crypto symbol or name (e.g. "btc", "ethereum", "sol")
 
+  ─────────────────────────────────────────────────────────────────────────────
+  🎵 [3] SPOTDL MUSIC BOT
+  ─────────────────────────────────────────────────────────────────────────────
+  Display Name: ${botMusic.name}
+  Public Key:   ${botMusic.pubkeyHex}
+  Address:      ${botMusic.address}
+  Usage:        Send Spotify track link or "song <artist - title>"
+
 ═══════════════════════════════════════════════════════════════════════════════
   To chat with either bot in Gupt:
   1. Open Gupt client
@@ -83,6 +101,7 @@ async function announceBots() {
     await Promise.allSettled([
       publishProfile(RELAYS, botYtdlp, ytdlpProfile),
       publishProfile(RELAYS, botCrypto, cryptoProfile),
+      publishProfile(RELAYS, botMusic, musicProfile),
     ]);
     console.log("[init] Kind 0 profiles published.");
 
@@ -90,6 +109,7 @@ async function announceBots() {
     await Promise.allSettled([
       publishBeacon(RELAYS, botYtdlp, ytdlpBeacon),
       publishBeacon(RELAYS, botCrypto, cryptoBeacon),
+      publishBeacon(RELAYS, botMusic, musicBeacon),
     ]);
     console.log("[init] Directory beacons published.");
   } catch (err) {
@@ -111,7 +131,6 @@ async function pollLoop() {
 
         const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
         console.log(`[yt-dlp] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
-        // Handle asynchronously so poll doesn't block
         handleYtdlpMessage({
           text,
           sender: msg.sender,
@@ -130,7 +149,6 @@ async function pollLoop() {
 
         const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
         console.log(`[crypto] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
-        // Handle asynchronously so poll doesn't block
         handleCryptoMessage({
           text,
           sender: msg.sender,
@@ -138,6 +156,24 @@ async function pollLoop() {
           botKey: botCrypto,
         }).catch((err) => {
           console.error("[crypto] Unhandled handler error:", err);
+        });
+      }
+
+      // 3. Poll for SpotDL Music Bot
+      const musicMessages = await pollInbox(RELAYS, botMusic, since);
+      for (const msg of musicMessages) {
+        if (processedEventIds.has(msg.eventId)) continue;
+        recordEventId(msg.eventId);
+
+        const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
+        console.log(`[music] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
+        handleMusicMessage({
+          text,
+          sender: msg.sender,
+          relays: RELAYS,
+          botKey: botMusic,
+        }).catch((err) => {
+          console.error("[music] Unhandled handler error:", err);
         });
       }
 

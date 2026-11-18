@@ -2,6 +2,11 @@
 
 This repository is a **starter template and reference implementation** for building two-way, end-to-end encrypted autonomous bots on the [Gupt](https://gupt.app) decentralized messaging network and [Rabta Relay Protocol](https://gist.githubusercontent.com/besoeasy/098bbed1f63a57a16f208c15155fbf7c/raw/SKILL.md).
 
+It ships with 3 production reference bots:
+1. **yt-dlp Media Bot** (`src/bots/ytdlp.js`) — Downloads audio/video from URLs and sends attachments.
+2. **Crypto Price Bot** (`src/bots/crypto.js`) — Live crypto price, 24h high, and 24h low tracker.
+3. **SpotDL Music Bot** (`src/bots/music.js`) — Resolves Spotify tracks and downloads MP3s with embedded album art and metadata.
+
 Instead of proprietary API tokens or central gateways, bots on Gupt communicate directly with decentralized relays by generating cryptographic Ed25519 keys and exchanging authenticated Nostr/Rabta ciphertext envelopes.
 
 ---

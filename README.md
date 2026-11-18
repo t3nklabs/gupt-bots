@@ -22,6 +22,12 @@ Real-time cryptocurrency price, 24-hour high, and 24-hour low tracker.
 - **Usage:** Send any ticker or coin name (e.g. `btc`, `bitcoin`, `eth`, `sol`, `doge`, `pepe`).
 - Returns formatted Markdown with live price, 24h high, 24h low, and 24h change percentage.
 
+### 3. **SpotDL Music Bot**
+Downloads songs with embedded **album cover art, artist, and track metadata** as high-quality MP3s.
+- **Spotify Track Links:** `https://open.spotify.com/track/...` (automatically resolves title and artist).
+- **Song Search:** `song <artist - title>` or `song <name>` (e.g. `song Hotel California - Eagles`).
+- **YouTube Music:** Send `https://music.youtube.com/watch?v=...`.
+
 ---
 
 ## 🚀 Quick Start
