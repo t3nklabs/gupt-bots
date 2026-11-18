@@ -106,4 +106,5 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 |---|---|---|
 | `GUPT_RELAY` | `https://rabta.gupt.app,https://1.rabta.space` | Comma-separated list of Rabta relay URLs |
 | `POLL_INTERVAL_MS` | `2500` | Inbound DM poll interval in milliseconds |
+| `BEACON_INTERVAL_MS` | `3600000` (1h) | Directory beacon republish heartbeat (expiry: 90 mins) |
 | `YTDLP_PATH` | `yt-dlp` | Path to yt-dlp binary |

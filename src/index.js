@@ -18,7 +18,7 @@ import {
 
 const RELAYS = parseRelays(process.env.GUPT_RELAY);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || "2500", 10);
-const BEACON_INTERVAL_MS = 12 * 60 * 60 * 1000; // 12 hours
+const BEACON_INTERVAL_MS = parseInt(process.env.BEACON_INTERVAL_MS || String(60 * 60 * 1000), 10); // 1 hour
 
 // Fresh random account keys every boot
 const botYtdlp = {

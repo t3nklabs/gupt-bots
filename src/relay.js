@@ -216,11 +216,18 @@ export async function publishProfile(relays, botKey, { name, about = "", website
   return await publishEvent(relays, event);
 }
 
+const DEFAULT_BEACON_TTL_SECONDS = 90 * 60; // 90 minutes (dead bots unlist quickly)
+
 /** Publish directory beacon (gupt/bot/beacon) */
-export async function publishBeacon(relays, botKey, { name, description = "", owner = "", website = "" }) {
+export async function publishBeacon(
+  relays,
+  botKey,
+  { name, description = "", owner = "", website = "" },
+  ttlSeconds = DEFAULT_BEACON_TTL_SECONDS,
+) {
   const privBytes = hexToBytes(botKey.privkeyHex);
   const now = Math.floor(Date.now() / 1000);
-  const expiresAt = now + 30 * 60 * 60; // 30 hours
+  const expiresAt = now + ttlSeconds;
 
   const beaconData = {
     v: 1,
