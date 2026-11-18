@@ -232,7 +232,7 @@ export const mybotBeacon = {
   website: "https://example.com",
 };
 
-export async function handleMybotMessage({ text, sender, relays, botKey }) {
+export async function handleMybotMessage({ text, sender, relays, botKey, ttlSeconds }) {
   const trimmed = (text || "").trim();
 
   if (/^help/i.test(trimmed)) {
@@ -241,16 +241,24 @@ export async function handleMybotMessage({ text, sender, relays, botKey }) {
       botKey,
       sender,
       "**My Custom Bot**\n\nSend any command to get started!",
-      { source: "my-bot" }
+      { source: "my-bot", ttlSeconds }
     );
     return;
   }
 
   // Your custom bot logic here:
   const response = `You said: "${trimmed}"`;
-  await sendTextReply(relays, botKey, sender, response, { source: "my-bot" });
+  await sendTextReply(relays, botKey, sender, response, { source: "my-bot", ttlSeconds });
 }
 ```
+
+> **Expiry mirroring:** `pollInbox` reports `ttlSeconds` (the gap between the incoming
+> message's `created_at` and `expires_at`). Passing it as the `ttlSeconds` option to
+> `sendTextReply` / `sendMediaReply` makes the reply expire on the same gap, so the bot
+> respects the sender's retention setting instead of always using 30 days. Pass it through
+> from your handlers — the reference bots all do. Gaps below 60 seconds are floored to 60
+> seconds (a shorter event could expire before it reaches the relay) and the 30 day default
+> is used when the incoming event carries no usable gap.
 
 ### 2. Register the Bot in `src/index.js`
 In `src/index.js`:

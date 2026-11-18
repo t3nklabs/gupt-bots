@@ -136,6 +136,7 @@ async function pollLoop() {
           sender: msg.sender,
           relays: RELAYS,
           botKey: botYtdlp,
+          ttlSeconds: msg.ttlSeconds,
         }).catch((err) => {
           console.error("[yt-dlp] Unhandled handler error:", err);
         });
@@ -154,6 +155,7 @@ async function pollLoop() {
           sender: msg.sender,
           relays: RELAYS,
           botKey: botCrypto,
+          ttlSeconds: msg.ttlSeconds,
         }).catch((err) => {
           console.error("[crypto] Unhandled handler error:", err);
         });
@@ -172,6 +174,7 @@ async function pollLoop() {
           sender: msg.sender,
           relays: RELAYS,
           botKey: botMusic,
+          ttlSeconds: msg.ttlSeconds,
         }).catch((err) => {
           console.error("[music] Unhandled handler error:", err);
         });

@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "test": "node test/queue.test.mjs && node test/expiry.test.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^0.4.0",

@@ -5,7 +5,7 @@ services:
     container_name: gupt-bots
     restart: unless-stopped
     environment:
-      - GUPT_RELAY=https://rabta.gupt.app,https://1.rabta.space
+      - GUPT_RELAY=https://1.rabta.space,http://chotu:3232
       - POLL_INTERVAL_MS=2500
       - NODE_ENV=production
     logging:

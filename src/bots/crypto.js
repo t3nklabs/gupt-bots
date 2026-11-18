@@ -132,7 +132,7 @@ export async function getCryptoData(query) {
   return null;
 }
 
-export async function handleCryptoMessage({ text, sender, relays, botKey }) {
+export async function handleCryptoMessage({ text, sender, relays, botKey, ttlSeconds }) {
   let query = (text || "").trim();
 
   // Strip common command prefixes
@@ -151,7 +151,7 @@ export async function handleCryptoMessage({ text, sender, relays, botKey }) {
       `• \`eth\` or \`ethereum\`\n` +
       `• \`sol\` or \`solana\`\n` +
       `• \`doge\` or \`pepe\``,
-      { source: "crypto-bot" },
+      { source: "crypto-bot", ttlSeconds },
     );
     return;
   }
@@ -165,7 +165,7 @@ export async function handleCryptoMessage({ text, sender, relays, botKey }) {
       botKey,
       sender,
       `❌ Could not find cryptocurrency **"${query}"**.\n\nPlease check the spelling or try the ticker symbol (e.g. \`BTC\`, \`ETH\`, \`SOL\`).`,
-      { source: "crypto-bot" },
+      { source: "crypto-bot", ttlSeconds },
     );
     return;
   }
@@ -184,6 +184,6 @@ export async function handleCryptoMessage({ text, sender, relays, botKey }) {
     `• **24h Change:** ${changeFormatted}\n\n` +
     `_Source: ${data.source}_`;
 
-  await sendTextReply(relays, botKey, sender, message, { source: "crypto-bot" });
+  await sendTextReply(relays, botKey, sender, message, { source: "crypto-bot", ttlSeconds });
   console.log(`[crypto] Replied to ${sender.slice(0, 12)} for ${data.symbol}`);
 }

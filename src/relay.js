@@ -15,6 +15,25 @@ import {
 
 const DEFAULT_RELAYS = ["https://rabta.gupt.app", "https://1.rabta.space"];
 const EXPIRY_DAYS = 30;
+const MAX_TTL_SECONDS = EXPIRY_DAYS * 24 * 60 * 60;
+// Replies expire on the same gap as the message they answer, but a gap this
+// short would be dead before the reply even reaches the relay.
+const MIN_REPLY_TTL_SECONDS = 60;
+
+/**
+ * Clamp a TTL to sane bounds. Anything unusable falls back to the default
+ * lifetime, so callers can pass along whatever the sender used.
+ */
+export function clampTtl(ttlSeconds) {
+  const ttl = Number(ttlSeconds);
+  if (!Number.isFinite(ttl) || ttl <= 0) return MAX_TTL_SECONDS;
+  return Math.min(MAX_TTL_SECONDS, Math.max(MIN_REPLY_TTL_SECONDS, Math.floor(ttl)));
+}
+
+/** Expiry stamped on a new event: now plus the (clamped) mirrored TTL */
+function resolveExpiry(ttlSeconds, now) {
+  return now + clampTtl(ttlSeconds);
+}
 
 export function parseRelays(val) {
   if (!val) return DEFAULT_RELAYS;
@@ -86,7 +105,10 @@ export async function publishEvent(relays, event) {
 }
 
 /** Send an encrypted DM event to recipient */
-export async function sendDM({ relays, target, payload, blobHashes = [] }, botKey) {
+export async function sendDM(
+  { relays, target, payload, blobHashes = [], ttlSeconds },
+  botKey,
+) {
   const privBytes = hexToBytes(botKey.privkeyHex);
   const targetClean = target.replace(/^ed25519:/i, "").trim().toLowerCase();
 
@@ -97,7 +119,7 @@ export async function sendDM({ relays, target, payload, blobHashes = [] }, botKe
   const cipherB64 = toBase64(ciphertext);
 
   const now = Math.floor(Date.now() / 1000);
-  const expires = now + EXPIRY_DAYS * 24 * 60 * 60;
+  const expires = resolveExpiry(ttlSeconds, now);
   const envelope = {
     blobs: [...new Set(blobHashes.map((h) => String(h).toLowerCase()))],
     collection: "gupt/chat/dm",
@@ -135,7 +157,10 @@ export async function sendTextReply(relays, botKey, targetPubHex, text, options 
     ts: Date.now(),
     template: options.template !== undefined ? options.template : true,
   });
-  return await sendDM({ relays, target: targetPubHex, payload }, botKey);
+  return await sendDM(
+    { relays, target: targetPubHex, payload, ttlSeconds: options.ttlSeconds },
+    botKey,
+  );
 }
 
 /** Send file / media attachment */
@@ -172,6 +197,7 @@ export async function sendMediaReply(relays, botKey, targetPubHex, filePath, cap
       target: targetPubHex,
       payload,
       blobHashes: parts,
+      ttlSeconds: options.ttlSeconds,
     },
     botKey,
   );
@@ -303,10 +329,18 @@ export async function pollInbox(relays, botKey, sinceTimestampSec = null) {
           const decryptedBytes = gcm(sharedKey, nonce).decrypt(ciphertext);
           const payload = JSON.parse(new TextDecoder().decode(decryptedBytes));
 
+          // Mirror the sender's lifetime policy: gap between created_at and expires_at
+          const createdAt = Math.floor(Number(event.created_at) || 0);
+          const expiresAt = Math.floor(Number(event.expires_at) || 0);
+          const ttlSeconds =
+            createdAt > 0 && expiresAt > createdAt ? expiresAt - createdAt : null;
+
           messages.push({
             eventId: event.id,
             sender: senderPubHex,
-            created_at: event.created_at,
+            created_at: createdAt,
+            expires_at: expiresAt,
+            ttlSeconds,
             payload,
             relay,
           });

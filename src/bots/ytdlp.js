@@ -41,7 +41,7 @@ function cleanError(err) {
   return errorLine.slice(0, 200);
 }
 
-export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
+export async function handleYtdlpMessage({ text, sender, relays, botKey, ttlSeconds }) {
   const trimmed = (text || "").trim();
 
   // Check for help or empty
@@ -56,7 +56,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
       `• \`audio <url>\` — Download as MP3 audio\n` +
       `• \`video <url>\` — Download as MP4 video (up to 720p)\n\n` +
       `*Max file size: 50MB. Supports YouTube, TikTok, SoundCloud, Twitter/X, and more.*`,
-      { source: "yt-dlp-bot" },
+      { source: "yt-dlp-bot", ttlSeconds },
     );
     return;
   }
@@ -85,7 +85,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
         `⚠️ Please specify whether you want audio or video:\n\n` +
         `• Send: \`audio ${urlMatch[0]}\`\n` +
         `• Send: \`video ${urlMatch[0]}\``,
-        { source: "yt-dlp-bot" },
+        { source: "yt-dlp-bot", ttlSeconds },
       );
       return;
     }
@@ -97,7 +97,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
       `❓ Unrecognized command.\n\n` +
       `Send \`audio <url>\` or \`video <url>\`.\n` +
       `Send \`help\` for instructions.`,
-      { source: "yt-dlp-bot" },
+      { source: "yt-dlp-bot", ttlSeconds },
     );
     return;
   }
@@ -115,7 +115,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
         `⏳ **Added to queue!**\n\n` +
         `You are at position **#${pos}** in line (${pos === 1 ? "1 task ahead" : `${pos} tasks ahead`}).\n` +
         `Your download will begin automatically when it's your turn.`,
-        { source: "yt-dlp-bot" },
+        { source: "yt-dlp-bot", ttlSeconds },
       );
     },
     onStart: async () => {
@@ -124,7 +124,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
         botKey,
         sender,
         `⏳ Downloading **${isAudio ? "audio (MP3)" : "video (MP4)"}**...\nPlease wait a moment.`,
-        { source: "yt-dlp-bot" },
+        { source: "yt-dlp-bot", ttlSeconds },
       );
     },
     run: async () => {
@@ -185,7 +185,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
           sender,
           targetPath,
           targetFile,
-          { source: "yt-dlp-bot" },
+          { source: "yt-dlp-bot", ttlSeconds },
         );
 
         if (!result.ok) {
@@ -200,7 +200,7 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
           botKey,
           sender,
           `❌ **Download failed**\n\n${cleanError(err)}`,
-          { source: "yt-dlp-bot" },
+          { source: "yt-dlp-bot", ttlSeconds },
         );
       } finally {
         await rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -209,6 +209,6 @@ export async function handleYtdlpMessage({ text, sender, relays, botKey }) {
   });
 
   if (!queueResult.ok) {
-    await sendTextReply(relays, botKey, sender, queueResult.message, { source: "yt-dlp-bot" });
+    await sendTextReply(relays, botKey, sender, queueResult.message, { source: "yt-dlp-bot", ttlSeconds });
   }
 }

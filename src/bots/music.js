@@ -62,7 +62,7 @@ function cleanError(err) {
   return errorLine.slice(0, 200);
 }
 
-export async function handleMusicMessage({ text, sender, relays, botKey }) {
+export async function handleMusicMessage({ text, sender, relays, botKey, ttlSeconds }) {
   const trimmed = (text || "").trim();
 
   // Help command
@@ -78,7 +78,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
       `• Send a song query: \`song Hotel California - Eagles\`\n` +
       `• Send a YouTube Music link: \`https://music.youtube.com/watch?v=...\`\n\n` +
       `*Audio format: High quality MP3 with embedded cover art.*`,
-      { source: "spotdl-bot" },
+      { source: "spotdl-bot", ttlSeconds },
     );
     return;
   }
@@ -90,7 +90,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
       botKey,
       sender,
       `⚠️ Please send an individual Spotify **track** link (e.g. \`https://open.spotify.com/track/...\`) or search by song name (e.g. \`song <artist - title>\`).`,
-      { source: "spotdl-bot" },
+      { source: "spotdl-bot", ttlSeconds },
     );
     return;
   }
@@ -112,7 +112,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
         botKey,
         sender,
         `❌ Could not resolve Spotify track metadata. Please try searching by name with \`song <artist - title>\`.`,
-        { source: "spotdl-bot" },
+        { source: "spotdl-bot", ttlSeconds },
       );
       return;
     }
@@ -138,7 +138,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
         `⏳ **Added to queue!**\n\n` +
         `You are at position **#${pos}** in line (${pos === 1 ? "1 song ahead" : `${pos} songs ahead`}).\n` +
         `Your music download will begin automatically when it's your turn.`,
-        { source: "spotdl-bot" },
+        { source: "spotdl-bot", ttlSeconds },
       );
     },
     onStart: async () => {
@@ -147,7 +147,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
         botKey,
         sender,
         `⏳ Downloading **${trackLabel}** with embedded album art & metadata...\nPlease wait a moment.`,
-        { source: "spotdl-bot" },
+        { source: "spotdl-bot", ttlSeconds },
       );
     },
     run: async () => {
@@ -201,7 +201,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
           sender,
           targetPath,
           targetFile,
-          { source: "spotdl-bot", mime: "audio/mpeg" },
+          { source: "spotdl-bot", mime: "audio/mpeg", ttlSeconds },
         );
 
         if (!result.ok) {
@@ -216,7 +216,7 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
           botKey,
           sender,
           `❌ **Music download failed**\n\n${cleanError(err)}`,
-          { source: "spotdl-bot" },
+          { source: "spotdl-bot", ttlSeconds },
         );
       } finally {
         await rm(tempDir, { recursive: true, force: true }).catch(() => {});
@@ -225,6 +225,6 @@ export async function handleMusicMessage({ text, sender, relays, botKey }) {
   });
 
   if (!queueResult.ok) {
-    await sendTextReply(relays, botKey, sender, queueResult.message, { source: "spotdl-bot" });
+    await sendTextReply(relays, botKey, sender, queueResult.message, { source: "spotdl-bot", ttlSeconds });
   }
 }
