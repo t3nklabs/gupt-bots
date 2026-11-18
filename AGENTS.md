@@ -2,10 +2,11 @@
 
 This repository is a **starter template and reference implementation** for building two-way, end-to-end encrypted autonomous bots on the [Gupt](https://gupt.app) decentralized messaging network and [Rabta Relay Protocol](https://gist.githubusercontent.com/besoeasy/098bbed1f63a57a16f208c15155fbf7c/raw/SKILL.md).
 
-It ships with 3 production reference bots:
+It ships with 4 production reference bots:
 1. **yt-dlp Media Bot** (`src/bots/ytdlp.js`) — Downloads audio/video from URLs and sends attachments.
 2. **Crypto Price Bot** (`src/bots/crypto.js`) — Live crypto price, 24h high, and 24h low tracker.
 3. **SpotDL Music Bot** (`src/bots/music.js`) — Resolves Spotify tracks and downloads MP3s with embedded album art and metadata.
+4. **Torrent Bot** (`src/bots/torrent.js`) — Parses an IMDb movie link or id and returns the highest-seeded torrents from the Torrentio index as magnet links.
 
 Instead of proprietary API tokens or central gateways, bots on Gupt communicate directly with decentralized relays by generating cryptographic Ed25519 keys and exchanging authenticated Nostr/Rabta ciphertext envelopes.
 
@@ -196,6 +197,32 @@ When sending files (images, audio, video, documents):
      chunks.map((chunk) => uploadBlob(relays, sealRabta1(chunk, mediaKey)))
    );
    ```
+
+---
+
+## 🧲 Torrentio Integration (`src/bots/torrent.js`)
+
+The Torrent Bot answers IMDb movie links and ids with magnet links from the public
+[Torrentio](https://torrentio.strem.fun) Stremio addon.
+
+* **Lookup:** `GET https://torrentio.strem.fun/stream/movie/<ttid>.json` returns a
+  `streams` array (often ~500 entries) whose items carry only `infoHash`, `fileIdx`,
+  `title`, `name` and optional `sources` trackers — there is no `.torrent` file or
+  `url` field to send as an attachment.
+* **Metadata:** `GET https://v3-cinemeta.strem.io/meta/movie/<ttid>.json` supplies the
+  display name, year, rating and runtime. It is best-effort: the reply falls back to
+  the plain IMDb id when Cinemeta is down.
+* **Rendering limit:** Gupt linkifies and renders buttons only for `http(s):` and
+  `mailto:` URLs (`messageFormat.js`: `BUTTON_RE`, `LINK_RE`, `normalizeHref`). A
+  `magnet:` URI therefore cannot be a button or a link — it is sent inside a fenced
+  code block so the user can copy it. Trackers are appended as `&tr=` params from the
+  stream's `sources`, dropped when the URI would exceed 500 chars.
+* **Selection:** results are deduped by info hash, sorted by seeders, capped by
+  `TORRENT_RESULTS` (default 5) and trimmed to stay under the 7,000-char budget that
+  keeps clear of the client's 8,000-char `MAX_FORMAT_LENGTH`.
+* **Quality filter:** an optional leading `4k` / `2160p` / `1440p` / `1080p` / `720p` /
+  `480p` / `cam` token narrows the list; `4k` and `2160p` are aliases. Unmatched filters
+  answer with the qualities that do exist.
 
 ---
 

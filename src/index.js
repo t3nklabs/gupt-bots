@@ -20,6 +20,11 @@ import {
   musicProfile,
   musicBeacon,
 } from "./bots/music.js";
+import {
+  handleTorrentMessage,
+  torrentProfile,
+  torrentBeacon,
+} from "./bots/torrent.js";
 
 const RELAYS = parseRelays(process.env.GUPT_RELAY);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || "2500", 10);
@@ -39,6 +44,11 @@ const botCrypto = {
 const botMusic = {
   ...generateKeypair(),
   name: "SpotDL Music Bot",
+};
+
+const botTorrent = {
+  ...generateKeypair(),
+  name: "Torrent Bot",
 };
 
 const processedEventIds = new Set();
@@ -84,8 +94,16 @@ function printBanner() {
   Address:      ${botMusic.address}
   Usage:        Send Spotify track link or "song <artist - title>"
 
+  ─────────────────────────────────────────────────────────────────────────────
+  🧲 [4] TORRENT BOT
+  ─────────────────────────────────────────────────────────────────────────────
+  Display Name: ${botTorrent.name}
+  Public Key:   ${botTorrent.pubkeyHex}
+  Address:      ${botTorrent.address}
+  Usage:        Send an IMDb movie link or id (e.g. "tt0111161"), optionally prefixed with "1080p"
+
 ═══════════════════════════════════════════════════════════════════════════════
-  To chat with either bot in Gupt:
+  To chat with any bot in Gupt:
   1. Open Gupt client
   2. Start a new DM to the bot's Address (or search for it in /bots directory)
   3. Send your message!
@@ -102,6 +120,7 @@ async function announceBots() {
       publishProfile(RELAYS, botYtdlp, ytdlpProfile),
       publishProfile(RELAYS, botCrypto, cryptoProfile),
       publishProfile(RELAYS, botMusic, musicProfile),
+      publishProfile(RELAYS, botTorrent, torrentProfile),
     ]);
     console.log("[init] Kind 0 profiles published.");
 
@@ -110,6 +129,7 @@ async function announceBots() {
       publishBeacon(RELAYS, botYtdlp, ytdlpBeacon),
       publishBeacon(RELAYS, botCrypto, cryptoBeacon),
       publishBeacon(RELAYS, botMusic, musicBeacon),
+      publishBeacon(RELAYS, botTorrent, torrentBeacon),
     ]);
     console.log("[init] Directory beacons published.");
   } catch (err) {
@@ -177,6 +197,25 @@ async function pollLoop() {
           ttlSeconds: msg.ttlSeconds,
         }).catch((err) => {
           console.error("[music] Unhandled handler error:", err);
+        });
+      }
+
+      // 4. Poll for Torrent Bot
+      const torrentMessages = await pollInbox(RELAYS, botTorrent, since);
+      for (const msg of torrentMessages) {
+        if (processedEventIds.has(msg.eventId)) continue;
+        recordEventId(msg.eventId);
+
+        const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
+        console.log(`[torrent] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
+        handleTorrentMessage({
+          text,
+          sender: msg.sender,
+          relays: RELAYS,
+          botKey: botTorrent,
+          ttlSeconds: msg.ttlSeconds,
+        }).catch((err) => {
+          console.error("[torrent] Unhandled handler error:", err);
         });
       }
 
