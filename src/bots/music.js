@@ -14,14 +14,14 @@ const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const musicProfile = {
   name: "SpotDL Music Bot",
   about: "Download Spotify tracks & songs with embedded cover art and metadata. Send a Spotify link or 'song <artist - title>'.",
-  website: "https://spotify.com",
+  website: "https://github.com/t3nklabs/gupt-bots",
 };
 
 export const musicBeacon = {
   name: "spotdl-music-bot",
   description: "Downloads songs with embedded album art and tags from Spotify links or song names.",
   owner: "Antigravity",
-  website: "https://spotify.com",
+  website: "https://github.com/t3nklabs/gupt-bots",
 };
 
 /** Resolve public track metadata from Spotify track URL without API keys */

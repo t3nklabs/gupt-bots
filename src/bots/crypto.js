@@ -3,14 +3,14 @@ import { sendTextReply } from "../relay.js";
 export const cryptoProfile = {
   name: "Crypto Price Bot",
   about: "Real-time cryptocurrency price tracker. Send any coin name or symbol (e.g. 'btc', 'ethereum', 'sol').",
-  website: "https://coingecko.com",
+  website: "https://github.com/t3nklabs/gupt-bots",
 };
 
 export const cryptoBeacon = {
   name: "crypto-price-bot",
   description: "Returns live crypto price, 24h high, and 24h low for any cryptocurrency.",
   owner: "Antigravity",
-  website: "https://coingecko.com",
+  website: "https://github.com/t3nklabs/gupt-bots",
 };
 
 function formatPrice(num) {

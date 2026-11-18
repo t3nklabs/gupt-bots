@@ -14,14 +14,14 @@ const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
 export const ytdlpProfile = {
   name: "yt-dlp Bot",
   about: "Download audio or video from URLs into Gupt chat. Send 'audio <url>' or 'video <url>'.",
-  website: "https://github.com/yt-dlp/yt-dlp",
+  website: "https://github.com/t3nklabs/gupt-bots",
 };
 
 export const ytdlpBeacon = {
   name: "yt-dlp-bot",
   description: "Downloads audio or video from URLs and sends them directly to you.",
   owner: "Antigravity",
-  website: "https://github.com/yt-dlp/yt-dlp",
+  website: "https://github.com/t3nklabs/gupt-bots",
 };
 
 function cleanError(err) {
