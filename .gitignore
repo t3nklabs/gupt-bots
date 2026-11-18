@@ -1,0 +1,10 @@
+node_modules/
+package-lock.json
+.env
+*.log
+tmp/
+bots.md
+gupt_skill.md
+programmatic-chat.md
+gupt-notify.mjs
+gupt-bot-beacon.mjs

@@ -1,0 +1,15 @@
+{
+  "name": "gupt-bots",
+  "version": "1.0.0",
+  "description": "Two-way bots for Gupt protocol: yt-dlp media downloader and crypto price checker",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@noble/ciphers": "^0.4.0",
+    "@noble/curves": "^1.4.0",
+    "@noble/hashes": "^1.4.0"
+  }
+}

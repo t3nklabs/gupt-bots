@@ -1,0 +1,15 @@
+services:
+  gupt-bots:
+    build: .
+    image: gupt-bots:latest
+    container_name: gupt-bots
+    restart: unless-stopped
+    environment:
+      - GUPT_RELAY=https://rabta.gupt.app,https://1.rabta.space
+      - POLL_INTERVAL_MS=2500
+      - NODE_ENV=production
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
