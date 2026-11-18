@@ -220,6 +220,12 @@ The Torrent Bot answers IMDb movie links and ids with magnet links from the publ
 * **Selection:** results are deduped by info hash, sorted by seeders, capped by
   `TORRENT_RESULTS` (default 5) and trimmed to stay under the 7,000-char budget that
   keeps clear of the client's 8,000-char `MAX_FORMAT_LENGTH`.
+* **Delivery:** one DM per torrent (`formatResultMessages()` returns the messages; the
+  handler publishes them in order with a `TORRENT_MESSAGE_DELAY_MS` gap, default 200ms,
+  so relays that sort by the second keep the numbering stable). A summary message with
+  the IMDb button comes first; each entry repeats the movie title, `#n of m`, quality,
+  size, seeders, source, a truncated release name and exactly one magnet in a code
+  block. A failed follow-up message is logged and skipped rather than aborting the rest.
 * **Quality filter:** an optional leading `4k` / `2160p` / `1440p` / `1080p` / `720p` /
   `480p` / `cam` token narrows the list; `4k` and `2160p` are aliases. Unmatched filters
   answer with the qualities that do exist.

@@ -34,6 +34,7 @@ Send an IMDb movie link (or just the id) and get the best-seeded torrents from t
 - **Bare Id:** `tt0111161`.
 - **Quality Filter:** Prefix with `4k`, `1440p`, `1080p`, `720p`, `480p` or `cam` (e.g. `1080p tt0111161`).
 - Results are deduped, sorted by seeders, capped at 5, and annotated with size and source.
+- **Delivery:** one DM per torrent, preceded by a summary card with the IMDb button — each result can be copied or forwarded on its own.
 - *Magnet URIs are sent inside code blocks because Gupt only renders `http(s)` links as clickable.*
 
 ---
@@ -138,3 +139,4 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `TORRENTIO_BASE` | `https://torrentio.strem.fun` | Torrentio addon base URL (self-host or mirror) |
 | `CINEMETA_BASE` | `https://v3-cinemeta.strem.io` | Cinemeta metadata base URL |
 | `TORRENT_RESULTS` | `5` | Torrents per reply (1–10) |
+| `TORRENT_MESSAGE_DELAY_MS` | `200` | Pause between the per-torrent DMs (0–2000) so they stay ordered |

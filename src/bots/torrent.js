@@ -3,6 +3,7 @@ import { sendTextReply } from "../relay.js";
 const TORRENTIO_BASE = (process.env.TORRENTIO_BASE || "https://torrentio.strem.fun").replace(/\/+$/, "");
 const CINEMETA_BASE = (process.env.CINEMETA_BASE || "https://v3-cinemeta.strem.io").replace(/\/+$/, "");
 const MAX_RESULTS = clampInt(process.env.TORRENT_RESULTS, 5, 1, 10);
+const MESSAGE_DELAY_MS = clampInt(process.env.TORRENT_MESSAGE_DELAY_MS, 200, 0, 2000);
 const FETCH_TIMEOUT_MS = 15000;
 // Gupt's message formatter stops at 8000 chars; leave room for the footer.
 const MESSAGE_BUDGET_CHARS = 7000;
@@ -38,6 +39,10 @@ function clampInt(value, fallback, min, max) {
   const num = parseInt(value ?? "", 10);
   if (!Number.isFinite(num)) return fallback;
   return Math.min(max, Math.max(min, num));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /** Pull the IMDb id out of a link, a bare id, or any text containing one */
@@ -167,10 +172,12 @@ function yearOf(meta) {
   return match ? match[0] : "";
 }
 
-export function formatResults({ meta, imdbId, streams, quality, maxResults = MAX_RESULTS }) {
-  const entries = rankStreams(streams, { quality, maxResults });
-  if (!entries.length) return "";
+function truncate(value, max) {
+  const text = String(value || "");
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
 
+function headerMessage({ meta, imdbId, entries, total, quality }) {
   const title = plain(meta?.name) || imdbId;
   const year = yearOf(meta);
   const facts = [
@@ -181,25 +188,57 @@ export function formatResults({ meta, imdbId, streams, quality, maxResults = MAX
     .filter(Boolean)
     .join(" · ");
 
+  const scope = quality ? ` matching ${quality}` : "";
   const lines = [`🎬 **${title}**${year ? ` (${year})` : ""}`];
   if (facts) lines.push(facts);
-  const scope = quality ? ` matching ${quality}` : "";
   lines.push(
-    `\n${entries.length} of ${streams.length} torrents${scope}, highest seeders first.` +
-      `\nMagnet links are copy-only: Gupt only opens http(s) links.\n`,
+    `\n${total} torrents indexed${scope} — sending the ${entries.length} best-seeded, one per message.`,
+    `Magnet links are copy-only: Gupt only opens http(s) links.`,
+    `\n{{button "Open on IMDb" https://www.imdb.com/title/${imdbId}/}}`,
   );
+  return lines.join("\n");
+}
+
+function entryMessage({ entry, index, total, meta, imdbId }) {
+  const title = plain(meta?.name) || imdbId;
+  const year = yearOf(meta);
+  const stats = [
+    entry.size ? `💾 ${entry.size}` : "",
+    entry.seeders !== null ? `👤 ${entry.seeders}` : "👤 ?",
+    entry.provider ? `⚙️ ${entry.provider}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const release = entry.release && entry.release !== entry.quality ? truncate(entry.release, 90) : "";
+
+  const lines = [
+    `🎬 **${title}**${year ? ` (${year})` : ""}`,
+    `**#${index + 1} of ${total}** · ${entry.quality || "torrent"}`,
+  ];
+  if (stats) lines.push(stats);
+  if (release) lines.push(`_${release}_`);
+  lines.push(`\`\`\`\n${buildMagnet(entry)}\n\`\`\``);
+  return lines.join("\n");
+}
+
+/**
+ * One message per torrent plus a header message, so a single result can be
+ * copied or forwarded without dragging the rest of the list along.
+ */
+export function formatResultMessages({ meta, imdbId, streams, quality, maxResults = MAX_RESULTS }) {
+  const entries = rankStreams(streams, { quality, maxResults });
+  if (!entries.length) return [];
+
+  const messages = [
+    headerMessage({ meta, imdbId, entries, total: streams.length, quality }),
+  ];
 
   for (const [index, entry] of entries.entries()) {
-    const bits = [entry.quality || "torrent", entry.size, entry.seeders !== null ? `👤 ${entry.seeders}` : "", entry.provider]
-      .filter(Boolean)
-      .join(" · ");
-    const block = `**${index + 1}.** ${bits}\n\`\`\`\n${buildMagnet(entry)}\n\`\`\``;
-    if (lines.join("\n").length + block.length > MESSAGE_BUDGET_CHARS) break;
-    lines.push(block);
+    const message = entryMessage({ entry, index, total: entries.length, meta, imdbId });
+    if (message.length <= MESSAGE_BUDGET_CHARS) messages.push(message);
   }
 
-  lines.push(`\n{{button "Open on IMDb" https://www.imdb.com/title/${imdbId}/}}`);
-  return lines.join("\n");
+  return messages;
 }
 
 export async function fetchMovieMeta(imdbId) {
@@ -231,6 +270,7 @@ const HELP_TEXT =
   `• \`https://www.imdb.com/title/tt0111161/\`\n` +
   `• \`tt0111161\`\n` +
   `• \`1080p tt0111161\` — filter by quality (\`4k\`, \`1080p\`, \`720p\`, \`cam\`)\n\n` +
+  `Each result arrives as its own message, so you can forward just the one you want.\n\n` +
   `_Results come from the public Torrentio index. Download only what you have the right to._`;
 
 export async function handleTorrentMessage({ text, sender, relays, botKey, ttlSeconds }) {
@@ -271,8 +311,8 @@ export async function handleTorrentMessage({ text, sender, relays, botKey, ttlSe
       return;
     }
 
-    const message = formatResults({ meta, imdbId, streams, quality });
-    if (!message) {
+    const messages = formatResultMessages({ meta, imdbId, streams, quality });
+    if (!messages.length) {
       const available = availableQualities(streams);
       await sendTextReply(
         relays,
@@ -285,12 +325,26 @@ export async function handleTorrentMessage({ text, sender, relays, botKey, ttlSe
       return;
     }
 
-    const result = await sendTextReply(relays, botKey, sender, message, {
-      source: "torrent-bot",
-      ttlSeconds,
-    });
-    if (!result.ok) throw new Error(result.error || "Failed to publish reply to relay");
-    console.log(`[torrent] Replied to ${sender.slice(0, 12)} for ${imdbId}`);
+    let sent = 0;
+    for (const [index, message] of messages.entries()) {
+      // Small stagger keeps the header first and the numbering in order on relays
+      // that sort events by the second.
+      if (index > 0) await sleep(MESSAGE_DELAY_MS);
+
+      const result = await sendTextReply(relays, botKey, sender, message, {
+        source: "torrent-bot",
+        ttlSeconds,
+      });
+
+      if (!result.ok) {
+        if (index === 0) throw new Error(result.error || "Failed to publish reply to relay");
+        console.warn(`[torrent] Message ${index + 1}/${messages.length} failed: ${result.error}`);
+        continue;
+      }
+      sent++;
+    }
+
+    console.log(`[torrent] Sent ${sent}/${messages.length} messages to ${sender.slice(0, 12)} for ${imdbId}`);
   } catch (err) {
     console.error(`[torrent] Lookup failed for ${imdbId}:`, err?.message || err);
     await sendTextReply(
