@@ -113,6 +113,23 @@ Announces your bot in the Gupt `/bots` tab for discovery:
 }
 ```
 
+#### Announcing and verifying beacons (`src/announce.js`)
+
+`announceAll()` publishes each bot's profile and beacon **one request per relay**, so a failure is attributed to `(bot, relay)` instead of vanishing inside `Promise.allSettled`. `formatPublishLine()` / `tally()` turn those results into the startup lines:
+
+```text
+[init] ✓ beacon torrent-bot: 2/2 relays
+[init] ✗ beacon torrent-bot: 1/2 relays — failed on https://1.rabta.space (relay returned 400)
+[init] ✗ torrent-bot is NOT announced and will not appear in /bots.
+```
+
+After publishing, `verifyBots()` reads `gupt/bot/beacon` back from every relay (retrying, because relays are eventually consistent) and `listedBots()` applies the client's own rule: one card per pubkey, newest beacon, and **anything created more than an hour ago is invisible** regardless of `expires_at`. `missingEverywhere()` separates "listed nowhere" from "one relay is just unreadable".
+
+Two invariants this protects:
+
+* A bot must be in the `BOTS` array in `src/index.js`; a bot outside it is never announced and never polled.
+* `BEACON_INTERVAL_MS` must stay under 60 minutes, or the directory drops the bot between heartbeats even though the beacon has not expired.
+
 ### 3. Direct Message (DM) Wire Format
 Incoming and outgoing DMs live in collection `gupt/chat/dm`:
 

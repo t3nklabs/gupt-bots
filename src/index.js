@@ -1,8 +1,6 @@
 import { generateKeypair } from "./crypto.js";
 import {
   parseRelays,
-  publishProfile,
-  publishBeacon,
   pollInbox,
 } from "./relay.js";
 import {
@@ -25,6 +23,13 @@ import {
   torrentProfile,
   torrentBeacon,
 } from "./bots/torrent.js";
+import {
+  announceAll,
+  formatPublishLine,
+  missingEverywhere,
+  tally,
+  verifyBots,
+} from "./announce.js";
 
 const RELAYS = parseRelays(process.env.GUPT_RELAY);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || "2500", 10);
@@ -50,6 +55,15 @@ const botTorrent = {
   ...generateKeypair(),
   name: "Torrent Bot",
 };
+
+// Every bot that must show up in the Gupt /bots directory. A bot missing from
+// this list is never announced, so keep it complete.
+const BOTS = [
+  { key: botYtdlp, profile: ytdlpProfile, beacon: ytdlpBeacon },
+  { key: botCrypto, profile: cryptoProfile, beacon: cryptoBeacon },
+  { key: botMusic, profile: musicProfile, beacon: musicBeacon },
+  { key: botTorrent, profile: torrentProfile, beacon: torrentBeacon },
+];
 
 const processedEventIds = new Set();
 function recordEventId(id) {
@@ -111,30 +125,64 @@ function printBanner() {
 `);
 }
 
+function logAnnouncement(results) {
+  for (const bot of results) {
+    // The profile only decorates chat; the beacon is what puts the bot in /bots.
+    const events = [
+      ["profile", bot.displayName, bot.profile, "chat profile missing"],
+      ["beacon", bot.beaconName, bot.beacon, null],
+    ];
+
+    for (const [kind, label, perRelay, zeroWarning] of events) {
+      const line = formatPublishLine(kind, label, perRelay);
+      const { ok, failed } = tally(perRelay);
+
+      if (ok === 0) {
+        console.error(`[init] ✗ ${line}${zeroWarning ? ` — ${zeroWarning}` : ""}`);
+        if (kind === "beacon") {
+          console.error(`[init] ✗ ${label} is NOT announced and will not appear in /bots.`);
+        }
+      } else if (failed.length) {
+        console.warn(`[init] ⚠ ${line}`);
+      } else {
+        console.log(`[init] ✓ ${line}`);
+      }
+    }
+  }
+}
+
+async function reportDirectoryListing() {
+  const report = await verifyBots(RELAYS, BOTS);
+
+  console.log("[init] Directory check (Gupt /bots only shows beacons from the last hour):");
+  for (const relay of report) {
+    if (!relay.ok) {
+      console.warn(`[init]   ${relay.relay}: unreadable (${relay.error})`);
+      continue;
+    }
+    const missing = relay.missing.length ? ` — missing ${relay.missing.join(", ")}` : "";
+    console.log(`[init]   ${relay.relay}: ${relay.listed.length}/${BOTS.length} listed${missing}`);
+  }
+
+  const missing = missingEverywhere(report);
+  if (missing.length) {
+    console.error(`[init] ✗ Not listed on any relay: ${missing.join(", ")}. Fix the publish errors above.`);
+  } else {
+    console.log("[init] ✓ Every bot is listed in /bots on the relays that answered.");
+  }
+}
+
 async function announceBots() {
   console.log("[init] Publishing profiles and beacons to Rabta relays...");
 
   try {
-    // 1. Kind 0 profiles (Display names & avatars/about in chat)
-    await Promise.allSettled([
-      publishProfile(RELAYS, botYtdlp, ytdlpProfile),
-      publishProfile(RELAYS, botCrypto, cryptoProfile),
-      publishProfile(RELAYS, botMusic, musicProfile),
-      publishProfile(RELAYS, botTorrent, torrentProfile),
-    ]);
-    console.log("[init] Kind 0 profiles published.");
-
-    // 2. Directory beacons (for discovery in Gupt /bots route)
-    await Promise.allSettled([
-      publishBeacon(RELAYS, botYtdlp, ytdlpBeacon),
-      publishBeacon(RELAYS, botCrypto, cryptoBeacon),
-      publishBeacon(RELAYS, botMusic, musicBeacon),
-      publishBeacon(RELAYS, botTorrent, torrentBeacon),
-    ]);
-    console.log("[init] Directory beacons published.");
+    const results = await announceAll(RELAYS, BOTS);
+    logAnnouncement(results);
   } catch (err) {
     console.error("[init] Warning: Error publishing profiles/beacons:", err?.message || err);
   }
+
+  await reportDirectoryListing();
 }
 
 async function pollLoop() {
@@ -233,7 +281,9 @@ async function main() {
   printBanner();
   await announceBots();
 
-  // Schedule beacon refresh every 12 hours
+  // Refresh the heartbeat every BEACON_INTERVAL_MS (1 hour by default). Beacons
+  // live 90 minutes and /bots drops anything older than an hour, so the
+  // interval must stay below 60 minutes or the bots disappear between beats.
   setInterval(announceBots, BEACON_INTERVAL_MS).unref();
 
   // Start polling

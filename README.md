@@ -108,6 +108,31 @@ When the container starts, it displays a startup banner with the fresh public ke
 2. Start a new DM and paste the bot's address (`ed25519:...`).
 3. Send a message to test!
 
+### Startup announcement report
+
+Each boot (and every `BEACON_INTERVAL_MS`) publishes every bot's profile and directory beacon **once per relay**, then reads the relays back to confirm the bots are actually listed:
+
+```text
+[init] Publishing profiles and beacons to Rabta relays...
+[init] ✓ profile Torrent Bot: 2/2 relays
+[init] ✓ beacon torrent-bot: 2/2 relays
+[init] Directory check (Gupt /bots only shows beacons from the last hour):
+[init]   https://1.rabta.space: 4/4 listed
+[init]   https://rabta.gupt.app: 4/4 listed
+[init] ✓ Every bot is listed in /bots on the relays that answered.
+```
+
+Anything less than a full count is called out by name, with the relay and the relay's error, and a bot no relay accepts gets an explicit `is NOT announced and will not appear in /bots` line. The directory read retries a few times because relays are eventually consistent. Two rules keep this honest:
+
+* Every bot must be listed in `BOTS` in `src/index.js` — a bot left out of that array is never announced.
+* `BEACON_INTERVAL_MS` must stay **below 60 minutes**: `/bots` drops beacons created more than an hour ago, even if the event itself lives longer.
+
+If a bot is missing from `/bots`, the startup log says which relay refused it. A stale container is the other common cause — rebuild after pulling:
+
+```bash
+git pull && docker compose up -d --build
+```
+
 ---
 
 ## 🧪 Testing
