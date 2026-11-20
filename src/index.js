@@ -1,28 +1,9 @@
 import { generateKeypair } from "./crypto.js";
-import {
-  parseRelays,
-  pollInbox,
-} from "./relay.js";
-import {
-  handleYtdlpMessage,
-  ytdlpProfile,
-  ytdlpBeacon,
-} from "./bots/ytdlp.js";
-import {
-  handleCryptoMessage,
-  cryptoProfile,
-  cryptoBeacon,
-} from "./bots/crypto.js";
-import {
-  handleMusicMessage,
-  musicProfile,
-  musicBeacon,
-} from "./bots/music.js";
-import {
-  handleTorrentMessage,
-  torrentProfile,
-  torrentBeacon,
-} from "./bots/torrent.js";
+import { parseRelays, pollInbox } from "./relay.js";
+import { handleYtdlpMessage, ytdlpProfile, ytdlpBeacon } from "./bots/ytdlp.js";
+import { handleCryptoMessage, cryptoProfile, cryptoBeacon } from "./bots/crypto.js";
+import { handleMusicMessage, musicProfile, musicBeacon } from "./bots/music.js";
+import { handleTorrentMessage, torrentProfile, torrentBeacon } from "./bots/torrent.js";
 import {
   announceAll,
   formatPublishLine,
@@ -35,34 +16,37 @@ const RELAYS = parseRelays(process.env.GUPT_RELAY);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || "2500", 10);
 const BEACON_INTERVAL_MS = parseInt(process.env.BEACON_INTERVAL_MS || String(60 * 60 * 1000), 10); // 1 hour
 
-// Fresh random account keys every boot
-const botYtdlp = {
-  ...generateKeypair(),
-  name: "yt-dlp Bot",
-};
-
-const botCrypto = {
-  ...generateKeypair(),
-  name: "Crypto Price Bot",
-};
-
-const botMusic = {
-  ...generateKeypair(),
-  name: "SpotDL Music Bot",
-};
-
-const botTorrent = {
-  ...generateKeypair(),
-  name: "Torrent Bot",
-};
-
 // Every bot that must show up in the Gupt /bots directory. A bot missing from
 // this list is never announced, so keep it complete.
 const BOTS = [
-  { key: botYtdlp, profile: ytdlpProfile, beacon: ytdlpBeacon },
-  { key: botCrypto, profile: cryptoProfile, beacon: cryptoBeacon },
-  { key: botMusic, profile: musicProfile, beacon: musicBeacon },
-  { key: botTorrent, profile: torrentProfile, beacon: torrentBeacon },
+  {
+    key: { ...generateKeypair(), name: "yt-dlp Bot" },
+    profile: ytdlpProfile,
+    beacon: ytdlpBeacon,
+    handler: handleYtdlpMessage,
+    label: "yt-dlp",
+  },
+  {
+    key: { ...generateKeypair(), name: "Crypto Price Bot" },
+    profile: cryptoProfile,
+    beacon: cryptoBeacon,
+    handler: handleCryptoMessage,
+    label: "crypto",
+  },
+  {
+    key: { ...generateKeypair(), name: "SpotDL Music Bot" },
+    profile: musicProfile,
+    beacon: musicBeacon,
+    handler: handleMusicMessage,
+    label: "music",
+  },
+  {
+    key: { ...generateKeypair(), name: "Torrent Bot" },
+    profile: torrentProfile,
+    beacon: torrentBeacon,
+    handler: handleTorrentMessage,
+    label: "torrent",
+  },
 ];
 
 const processedEventIds = new Set();
@@ -75,6 +59,7 @@ function recordEventId(id) {
 }
 
 function printBanner() {
+  const [botYtdlp, botCrypto, botMusic, botTorrent] = BOTS.map((b) => b.key);
   console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                            GUPT TWO-WAY BOTS                                  ║
@@ -191,80 +176,24 @@ async function pollLoop() {
 
   while (true) {
     try {
-      // 1. Poll for YT-DLP Bot
-      const ytdlpMessages = await pollInbox(RELAYS, botYtdlp, since);
-      for (const msg of ytdlpMessages) {
-        if (processedEventIds.has(msg.eventId)) continue;
-        recordEventId(msg.eventId);
+      for (const bot of BOTS) {
+        const messages = await pollInbox(RELAYS, bot.key, since);
+        for (const msg of messages) {
+          if (processedEventIds.has(msg.eventId)) continue;
+          recordEventId(msg.eventId);
 
-        const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
-        console.log(`[yt-dlp] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
-        handleYtdlpMessage({
-          text,
-          sender: msg.sender,
-          relays: RELAYS,
-          botKey: botYtdlp,
-          ttlSeconds: msg.ttlSeconds,
-        }).catch((err) => {
-          console.error("[yt-dlp] Unhandled handler error:", err);
-        });
-      }
-
-      // 2. Poll for Crypto Bot
-      const cryptoMessages = await pollInbox(RELAYS, botCrypto, since);
-      for (const msg of cryptoMessages) {
-        if (processedEventIds.has(msg.eventId)) continue;
-        recordEventId(msg.eventId);
-
-        const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
-        console.log(`[crypto] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
-        handleCryptoMessage({
-          text,
-          sender: msg.sender,
-          relays: RELAYS,
-          botKey: botCrypto,
-          ttlSeconds: msg.ttlSeconds,
-        }).catch((err) => {
-          console.error("[crypto] Unhandled handler error:", err);
-        });
-      }
-
-      // 3. Poll for SpotDL Music Bot
-      const musicMessages = await pollInbox(RELAYS, botMusic, since);
-      for (const msg of musicMessages) {
-        if (processedEventIds.has(msg.eventId)) continue;
-        recordEventId(msg.eventId);
-
-        const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
-        console.log(`[music] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
-        handleMusicMessage({
-          text,
-          sender: msg.sender,
-          relays: RELAYS,
-          botKey: botMusic,
-          ttlSeconds: msg.ttlSeconds,
-        }).catch((err) => {
-          console.error("[music] Unhandled handler error:", err);
-        });
-      }
-
-      // 4. Poll for Torrent Bot
-      const torrentMessages = await pollInbox(RELAYS, botTorrent, since);
-      for (const msg of torrentMessages) {
-        if (processedEventIds.has(msg.eventId)) continue;
-        recordEventId(msg.eventId);
-
-        const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
-        console.log(`[torrent] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
-        handleTorrentMessage({
-          text,
-          sender: msg.sender,
-          relays: RELAYS,
-          botKey: botTorrent,
-          ttlSeconds: msg.ttlSeconds,
-        }).catch((err) => {
-          console.error("[torrent] Unhandled handler error:", err);
-        });
+          const text = typeof msg.payload?.text === "string" ? msg.payload.text : "";
+          console.log(`[${bot.label}] Inbound from ${msg.sender.slice(0, 12)}: "${text}"`);
+          bot.handler({
+            text,
+            sender: msg.sender,
+            relays: RELAYS,
+            botKey: bot.key,
+            ttlSeconds: msg.ttlSeconds,
+          }).catch((err) => {
+            console.error(`[${bot.label}] Unhandled handler error:`, err);
+          });
+        }
       }
 
       // Update since time (keep a small overlap buffer to prevent missing events due to slight clock drift)
