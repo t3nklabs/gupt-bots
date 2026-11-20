@@ -110,6 +110,7 @@ const MIME_BY_EXT = {
   jpeg: "image/jpeg",
   gif: "image/gif",
   webp: "image/webp",
+  svg: "image/svg+xml",
   txt: "text/plain",
   json: "application/json",
 };
