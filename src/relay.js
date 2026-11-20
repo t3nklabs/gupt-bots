@@ -13,7 +13,7 @@ import {
   guessMime,
 } from "./crypto.js";
 
-const DEFAULT_RELAYS = ["https://rabta.gupt.app", "https://1.rabta.space"];
+const DEFAULT_RELAYS = ["https://1.rabta.space"];
 const EXPIRY_DAYS = 30;
 const MAX_TTL_SECONDS = EXPIRY_DAYS * 24 * 60 * 60;
 // Replies expire on the same gap as the message they answer, but a gap this

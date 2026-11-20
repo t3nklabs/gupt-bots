@@ -58,7 +58,7 @@ curl -sSL https://raw.githubusercontent.com/besoeasy/gupt/main/src/lib/messageFo
                  ▼                                                      │
          ┌──────────────────────────────────────────────────────────────┴┐
          │                      Rabta Relay Node(s)                      │
-         │   (Default: https://rabta.gupt.app, https://1.rabta.space)    │
+         │                  (Default: https://1.rabta.space)                  │
          └───────────────────────────────────────────────────────────────┘
 ```
 
@@ -118,8 +118,8 @@ Announces your bot in the Gupt `/bots` tab for discovery:
 `announceAll()` publishes each bot's profile and beacon **one request per relay**, so a failure is attributed to `(bot, relay)` instead of vanishing inside `Promise.allSettled`. `formatPublishLine()` / `tally()` turn those results into the startup lines:
 
 ```text
-[init] ✓ beacon torrent-bot: 2/2 relays
-[init] ✗ beacon torrent-bot: 1/2 relays — failed on https://1.rabta.space (relay returned 400)
+[init] ✓ beacon torrent-bot: 1/1 relays
+[init] ✗ beacon torrent-bot: 0/1 relays — failed on https://1.rabta.space (relay returned 400)
 [init] ✗ torrent-bot is NOT announced and will not appear in /bots.
 ```
 

@@ -83,7 +83,6 @@ When the container starts, it displays a startup banner with the fresh public ke
 ╚═══════════════════════════════════════════════════════════════════════════════╝
 
   Relays:
-    https://rabta.gupt.app
     https://1.rabta.space
 
   ─────────────────────────────────────────────────────────────────────────────
@@ -114,11 +113,10 @@ Each boot (and every `BEACON_INTERVAL_MS`) publishes every bot's profile and dir
 
 ```text
 [init] Publishing profiles and beacons to Rabta relays...
-[init] ✓ profile Torrent Bot: 2/2 relays
-[init] ✓ beacon torrent-bot: 2/2 relays
+[init] ✓ profile Torrent Bot: 1/1 relays
+[init] ✓ beacon torrent-bot: 1/1 relays
 [init] Directory check (Gupt /bots only shows beacons from the last hour):
 [init]   https://1.rabta.space: 4/4 listed
-[init]   https://rabta.gupt.app: 4/4 listed
 [init] ✓ Every bot is listed in /bots on the relays that answered.
 ```
 
@@ -157,7 +155,7 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 
 | Variable | Default | Description |
 |---|---|---|
-| `GUPT_RELAY` | `https://rabta.gupt.app,https://1.rabta.space` | Comma-separated list of Rabta relay URLs |
+| `GUPT_RELAY` | `https://1.rabta.space` | Comma-separated list of Rabta relay URLs |
 | `POLL_INTERVAL_MS` | `2500` | Inbound DM poll interval in milliseconds |
 | `BEACON_INTERVAL_MS` | `3600000` (1h) | Directory beacon republish heartbeat (expiry: 90 mins) |
 | `YTDLP_PATH` | `yt-dlp` | Path to yt-dlp binary |

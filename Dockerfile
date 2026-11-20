@@ -26,7 +26,7 @@ COPY src/ ./src/
 
 # Default environment variables
 ENV NODE_ENV=production
-ENV GUPT_RELAY="https://rabta.gupt.app,https://1.rabta.space"
+ENV GUPT_RELAY="https://1.rabta.space"
 ENV POLL_INTERVAL_MS=2500
 
 CMD ["node", "src/index.js"]
