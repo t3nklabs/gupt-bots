@@ -5,6 +5,12 @@ import { handleCryptoMessage, cryptoProfile, cryptoBeacon } from "./bots/crypto.
 import { handleMusicMessage, musicProfile, musicBeacon } from "./bots/music.js";
 import { handleTorrentMessage, torrentProfile, torrentBeacon } from "./bots/torrent.js";
 import {
+  handleBitcoinBuddyMessage,
+  bitcoinBuddyProfile,
+  bitcoinBuddyBeacon,
+  startBitcoinBuddyLoop,
+} from "./bots/bitcoinbuddy.js";
+import {
   announceAll,
   formatPublishLine,
   missingEverywhere,
@@ -47,6 +53,13 @@ const BOTS = [
     handler: handleTorrentMessage,
     label: "torrent",
   },
+  {
+    key: { ...generateKeypair(), name: "Bitcoin Buddy" },
+    profile: bitcoinBuddyProfile,
+    beacon: bitcoinBuddyBeacon,
+    handler: handleBitcoinBuddyMessage,
+    label: "bitcoin-buddy",
+  },
 ];
 
 const processedEventIds = new Set();
@@ -59,7 +72,7 @@ function recordEventId(id) {
 }
 
 function printBanner() {
-  const [botYtdlp, botCrypto, botMusic, botTorrent] = BOTS.map((b) => b.key);
+  const [botYtdlp, botCrypto, botMusic, botTorrent, botBuddy] = BOTS.map((b) => b.key);
   console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                            GUPT TWO-WAY BOTS                                  ║
@@ -100,6 +113,14 @@ function printBanner() {
   Public Key:   ${botTorrent.pubkeyHex}
   Address:      ${botTorrent.address}
   Usage:        Send an IMDb movie link or id (e.g. "tt0111161"), optionally prefixed with "1080p"
+
+  ─────────────────────────────────────────────────────────────────────────────
+  🟠 [5] BITCOIN BUDDY BOT
+  ─────────────────────────────────────────────────────────────────────────────
+  Display Name: ${botBuddy.name}
+  Public Key:   ${botBuddy.pubkeyHex}
+  Address:      ${botBuddy.address}
+  Usage:        Send anything to subscribe; beams BTC price every 4h (25% chance)
 
 ═══════════════════════════════════════════════════════════════════════════════
   To chat with any bot in Gupt:
@@ -214,6 +235,11 @@ async function main() {
   // live 90 minutes and /bots drops anything older than an hour, so the
   // interval must stay below 60 minutes or the bots disappear between beats.
   setInterval(announceBots, BEACON_INTERVAL_MS).unref();
+
+  // Bitcoin Buddy: every 4h roll a 25% chance to beam BTC to everyone who
+  // ever messaged it (subscriber list = Rabta DM history for its label).
+  const buddy = BOTS.find((b) => b.label === "bitcoin-buddy");
+  if (buddy) startBitcoinBuddyLoop(RELAYS, buddy.key);
 
   // Start polling
   await pollLoop();

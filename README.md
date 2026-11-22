@@ -37,6 +37,13 @@ Send an IMDb movie link (or just the id) and get the best-seeded torrents from t
 - **Delivery:** one DM per torrent, preceded by a summary card with the IMDb button — each result can be copied or forwarded on its own.
 - *Magnet URIs are sent inside code blocks because Gupt only renders `http(s)` links as clickable.*
 
+### 5. **Bitcoin Buddy** 🟠
+Auto-subscribe price beams: message it once and you're a subscriber, then it beams the bitcoin price to all subscribers every 4 hours (25% chance each round).
+- **Subscribe:** send anything (e.g. `hi`, `help`, `start`) — you get a confirmation plus the current BTC price on the spot.
+- **How subscribers are found:** no local DB — each beam queries the Rabta API (`GET /api/v1/events?collection=gupt/chat/dm&labels=<bot-pubkey>`) and DMs every distinct sender (anyone who ever messaged the bot).
+- **Mute / re-subscribe:** send `stop` to mute beams, anything else to re-subscribe.
+- **Delivery:** one text DM per subscriber per beam (Binance → CoinGecko → CoinCap fallback, same stack as the Crypto bot).
+
 ---
 
 ## 🚦 In-Memory Anti-Spam Job Queue (`src/queue.js`)
@@ -165,3 +172,8 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `TORRENT_MIN_SEEDERS` | `2` | Drop torrents below this seeder count (unknown counts are dropped too) |
 | `TORRENT_CACHE_TTL_MS` | `3600000` (1h) | How long Torrentio/Cinemeta lookups stay cached; `0` disables |
 | `TORRENT_MESSAGE_DELAY_MS` | `200` | Pause between the per-torrent DMs (0–2000) so they stay ordered |
+| `BITCOIN_BUDDY_INTERVAL_MS` | `14400000` (4h) | Time between beam rolls (60000–86400000) |
+| `BITCOIN_BUDDY_CHANCE` | `0.25` | Probability (0–1) a round actually beams |
+| `BITCOIN_BUDDY_SUBSCRIBER_LIMIT` | `500` | Max DM events read per relay when discovering subscribers (10–1000) |
+| `BITCOIN_BUDDY_MESSAGE_DELAY_MS` | `200` | Pause between per-subscriber beam DMs (0–2000) |
+| `BITCOIN_BUDDY_BLOCKLIST_PATH` | `<cwd>/data/bitcoin-buddy-blocklist.json` | Where `stop` mutes are persisted |
