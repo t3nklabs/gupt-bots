@@ -1,7 +1,11 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { sendTextReply } from "../relay.js";
-import { getCryptoData } from "./crypto.js";
+import {
+  sendTextReply,
+  prepareMediaUpload,
+  sendPreparedMedia,
+} from "../relay.js";
+import { getCryptoData, buildCryptoSvg } from "./crypto.js";
 
 export const bitcoinBuddyProfile = {
   name: "Bitcoin Buddy",
@@ -206,6 +210,52 @@ export async function sendBitcoinPrice(relays, botKey, targetPubHex, { broadcast
   });
 }
 
+/** SVG card bytes for bitcoin data (same card the Crypto bot sends). */
+export function buildBitcoinSvgBytes(data) {
+  return new TextEncoder().encode(buildCryptoSvg(data));
+}
+
+/**
+ * Send the BTC price as a price-card image with the text as caption fallback.
+ * Falls back to text-only when the media upload/publish fails.
+ */
+export async function sendBitcoinCard(
+  relays,
+  botKey,
+  targetPubHex,
+  data,
+  {
+    broadcast = false,
+    caption = null,
+    ttlSeconds,
+    prepare = prepareMediaUpload,
+    sendCard = sendPreparedMedia,
+  } = {},
+) {
+  const text = caption ?? formatBitcoinMessage(data, { broadcast });
+  try {
+    const prepared = await prepare(
+      relays,
+      buildBitcoinSvgBytes(data),
+      "bitcoin.svg",
+      { mime: "image/svg+xml" },
+    );
+    const result = await sendCard(relays, botKey, targetPubHex, prepared, text, {
+      source: "bitcoin-buddy",
+      ttlSeconds,
+    });
+    if (!result?.ok) throw new Error(result?.error || "Media publish failed");
+    return { ...result, media: true };
+  } catch (err) {
+    console.warn(`[bitcoin-buddy] Card failed, falling back to text: ${err?.message || err}`);
+    const result = await sendTextReply(relays, botKey, targetPubHex, text, {
+      source: "bitcoin-buddy",
+      ttlSeconds,
+    });
+    return { ...result, media: false };
+  }
+}
+
 /**
  * Any inbound DM (re-)subscribes the sender. `stop` mutes future beams,
  * `start` (or any other message) re-subscribes and sends the price now.
@@ -232,20 +282,34 @@ export async function handleBitcoinBuddyMessage({ text, sender, relays, botKey, 
 
   if (!trimmed || /^(help|\/help|\/start|info|\?)$/i.test(trimmed) || isStartCommand(trimmed)) {
     const data = await getCryptoData("bitcoin");
-    const price = data ? `\n\n${formatBitcoinMessage(data)}` : "";
+    const intro =
+      `🟠 **Bitcoin Buddy**\n\nYou're subscribed! I'll beam you the bitcoin price every 4 hours (25% chance each round).\n\n` +
+      `• Send anything to stay subscribed + get the price now\n` +
+      `• Send \`stop\` to mute beams`;
+    if (!data) {
+      await sendTextReply(relays, botKey, sender, intro, { source: "bitcoin-buddy", ttlSeconds });
+      return;
+    }
+    // Intro baked into the card caption so first-timers get context.
+    await sendBitcoinCard(relays, botKey, sender, data, {
+      ttlSeconds,
+      caption: `${intro}\n\n${formatBitcoinMessage(data)}`,
+    });
+    return;
+  }
+
+  const data = await getCryptoData("bitcoin");
+  if (!data) {
     await sendTextReply(
       relays,
       botKey,
       sender,
-      `🟠 **Bitcoin Buddy**\n\nYou're subscribed! I'll beam you the bitcoin price every 4 hours (25% chance each round).\n\n` +
-        `• Send anything to stay subscribed + get the price now\n` +
-        `• Send \`stop\` to mute beams${price}`,
+      `⚠️ Could not fetch the bitcoin price right now. I'll try again on the next beam.`,
       { source: "bitcoin-buddy", ttlSeconds },
     );
     return;
   }
-
-  const result = await sendBitcoinPrice(relays, botKey, sender, { ttlSeconds });
+  const result = await sendBitcoinCard(relays, botKey, sender, data, { ttlSeconds });
   if (!result.ok) return;
   // Confirm the subscription on the first beam reply without a second DM:
   // the price message itself is the acknowledgement (see README).
@@ -254,36 +318,59 @@ export async function handleBitcoinBuddyMessage({ text, sender, relays, botKey, 
 
 /**
  * One broadcast round: 25% chance to fetch BTC once and DM every subscriber.
- * Pure history query — no local subscriber DB to keep in sync.
+ * Pure history query — no local subscriber DB to keep in sync. The price-card
+ * blob is uploaded ONCE and the same descriptor fans out to all recipients.
  */
 export async function tickBitcoinBuddyBroadcast(
   relays,
   botKey,
-  { chance = BITCOIN_BUDDY_CHANCE, random = Math.random, delayMs = BITCOIN_BUDDY_MESSAGE_DELAY_MS } = {},
+  {
+    chance = BITCOIN_BUDDY_CHANCE,
+    random = Math.random,
+    delayMs = BITCOIN_BUDDY_MESSAGE_DELAY_MS,
+    getPrice = getCryptoData,
+    discover = discoverSubscribers,
+    prepare = prepareMediaUpload,
+    sendCard = sendPreparedMedia,
+    sendText = sendTextReply,
+  } = {},
 ) {
   if (!shouldBroadcast({ chance, random })) {
     console.log(`[bitcoin-buddy] Roll missed (chance ${chance * 100}%) — no beam this round.`);
     return { broadcast: false, reason: "roll-missed" };
   }
 
-  const data = await getCryptoData("bitcoin");
+  const data = await getPrice("bitcoin");
   if (!data) {
     console.warn("[bitcoin-buddy] Skipping beam: price fetch failed.");
     return { broadcast: false, reason: "price-fetch-failed" };
   }
 
-  const subscribers = await discoverSubscribers(relays, botKey);
+  const subscribers = await discover(relays, botKey);
   if (!subscribers.length) {
     console.log("[bitcoin-buddy] Beam rolled yes, but no subscribers found.");
     return { broadcast: true, sent: 0, total: 0 };
   }
 
   const message = formatBitcoinMessage(data, { broadcast: true });
+
+  // Upload the card once; every recipient shares the same blob hash + key.
+  let prepared = null;
+  try {
+    prepared = await prepare(relays, buildBitcoinSvgBytes(data), "bitcoin.svg", {
+      mime: "image/svg+xml",
+    });
+  } catch (err) {
+    console.warn(`[bitcoin-buddy] Card upload failed, falling back to text: ${err?.message || err}`);
+  }
+
   let sent = 0;
   for (const [index, subscriber] of subscribers.entries()) {
     if (index > 0 && delayMs > 0) await new Promise((r) => setTimeout(r, delayMs));
     try {
-      const result = await sendTextReply(relays, botKey, subscriber, message, { source: "bitcoin-buddy" });
+      const result = prepared
+        ? await sendCard(relays, botKey, subscriber, prepared, message, { source: "bitcoin-buddy" })
+        : await sendText(relays, botKey, subscriber, message, { source: "bitcoin-buddy" });
       if (result?.ok) sent++;
       else console.warn(`[bitcoin-buddy] Beam to ${subscriber.slice(0, 12)} failed: ${result?.error}`);
     } catch (err) {
@@ -291,8 +378,8 @@ export async function tickBitcoinBuddyBroadcast(
     }
   }
 
-  console.log(`[bitcoin-buddy] Beam complete: ${sent}/${subscribers.length} delivered.`);
-  return { broadcast: true, sent, total: subscribers.length };
+  console.log(`[bitcoin-buddy] Beam complete: ${sent}/${subscribers.length} delivered (${prepared ? "card" : "text"}).`);
+  return { broadcast: true, sent, total: subscribers.length, media: Boolean(prepared) };
 }
 
 /** Every 4h timer; the roll happens inside each tick. */

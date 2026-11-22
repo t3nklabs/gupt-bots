@@ -203,6 +203,58 @@ export async function sendMediaReply(relays, botKey, targetPubHex, filePath, cap
   );
 }
 
+/** Upload media bytes once; the returned descriptor can fan out to N recipients. */
+export async function prepareMediaUpload(relays, fileBytes, fileName, options = {}) {
+  const bytes = fileBytes instanceof Uint8Array ? fileBytes : new Uint8Array(fileBytes);
+  const name = String(fileName || "file");
+  const mediaKey = webcrypto.getRandomValues(new Uint8Array(32));
+  const mediaNonce = webcrypto.getRandomValues(new Uint8Array(12));
+  const partCount = bytes.byteLength > 2 * 1024 * 1024 ? 8 : 1;
+  const chunks = splitParts(bytes, partCount);
+  const parts = await Promise.all(
+    chunks.map((chunk) => uploadBlob(relays, sealRabta1(chunk, mediaKey))),
+  );
+
+  return {
+    key: toBase64(mediaKey),
+    nonce: toBase64(mediaNonce),
+    mime: options.mime || guessMime(name),
+    name,
+    size: bytes.byteLength,
+    parts,
+  };
+}
+
+/** Send an already-uploaded media descriptor to one recipient (no re-upload). */
+export async function sendPreparedMedia(relays, botKey, targetPubHex, prepared, caption = "", options = {}) {
+  const payload = JSON.stringify({
+    type: "media",
+    text: caption || prepared.name,
+    source: options.source || "bot",
+    ts: Date.now(),
+    durationMs: options.durationMs || 0,
+    media: {
+      key: prepared.key,
+      nonce: prepared.nonce,
+      mime: prepared.mime,
+      name: prepared.name,
+      size: prepared.size,
+      parts: prepared.parts,
+    },
+  });
+
+  return await sendDM(
+    {
+      relays,
+      target: targetPubHex,
+      payload,
+      blobHashes: prepared.parts,
+      ttlSeconds: options.ttlSeconds,
+    },
+    botKey,
+  );
+}
+
 /** Publish Kind 0 profile (gupt/profiles) */
 export async function publishProfile(relays, botKey, { name, about = "", website = "", status = "" }) {
   const privBytes = hexToBytes(botKey.privkeyHex);

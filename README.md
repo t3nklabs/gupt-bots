@@ -42,7 +42,7 @@ Auto-subscribe price beams: message it once and you're a subscriber, then it bea
 - **Subscribe:** send anything (e.g. `hi`, `help`, `start`) — you get a confirmation plus the current BTC price on the spot.
 - **How subscribers are found:** no local DB — each beam queries the Rabta API (`GET /api/v1/events?collection=gupt/chat/dm&labels=<bot-pubkey>`) and DMs every distinct sender (anyone who ever messaged the bot).
 - **Mute / re-subscribe:** send `stop` to mute beams, anything else to re-subscribe.
-- **Delivery:** one text DM per subscriber per beam (Binance → CoinGecko → CoinCap fallback, same stack as the Crypto bot).
+- **Delivery:** one price-card image DM per subscriber per beam (same SVG card as the Crypto bot, text caption as fallback). The card blob is uploaded **once** and the hash/key reused for all recipients; if the upload fails the beam falls back to text.
 
 ---
 

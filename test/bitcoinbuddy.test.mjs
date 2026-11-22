@@ -5,6 +5,9 @@ import {
   isStartCommand,
   formatBitcoinMessage,
   discoverSubscribers,
+  buildBitcoinSvgBytes,
+  sendBitcoinCard,
+  tickBitcoinBuddyBroadcast,
   __resetBlocklistForTests,
 } from "../src/bots/bitcoinbuddy.js";
 
@@ -52,5 +55,68 @@ __resetBlocklistForTests([userA]);
 const subs2 = await discoverSubscribers(["https://relay1"], { pubkeyHex: self }, { fetchImpl: fakeFetch });
 assert.deepEqual(subs2, [userB]);
 __resetBlocklistForTests([]);
+
+// Card bytes are a real SVG document
+const svgBytes = buildBitcoinSvgBytes({ name: "Bitcoin", symbol: "BTC", price: 97500.5, high24h: 98000, low24h: 96000, change24h: 1.5, source: "Binance" });
+assert.ok(svgBytes instanceof Uint8Array && svgBytes.length > 500);
+assert.match(new TextDecoder().decode(svgBytes.slice(0, 200)), /<svg/);
+
+// Broadcast uploads the card ONCE then fans out to N recipients
+{
+  const price = { name: "Bitcoin", symbol: "BTC", price: 97500, high24h: 98000, low24h: 96000, change24h: 0.5, source: "Test" };
+  let prepares = 0;
+  const sentTo = [];
+  const result = await tickBitcoinBuddyBroadcast(["https://relay"], { pubkeyHex: self }, {
+    chance: 1,
+    random: () => 0,
+    delayMs: 0,
+    getPrice: async () => price,
+    discover: async () => [userA, userB],
+    prepare: async () => { prepares++; return { key: "k", nonce: "n", mime: "image/svg+xml", name: "bitcoin.svg", size: 1234, parts: ["hash1"] }; },
+    sendCard: async (relays, botKey, target, prepared, caption, opts) => {
+      assert.equal(prepared.parts[0], "hash1");
+      assert.match(caption, /BTC \/ USD/);
+      sentTo.push(target);
+      return { ok: true };
+    },
+    sendText: async () => { throw new Error("text fallback should not run when card upload succeeds"); },
+  });
+  assert.equal(prepares, 1);
+  assert.deepEqual(sentTo, [userA, userB]);
+  assert.equal(result.sent, 2);
+  assert.equal(result.media, true);
+}
+
+// Broadcast falls back to text when the single upload fails (still N sends, 1 attempt)
+{
+  const price = { name: "Bitcoin", symbol: "BTC", price: 97500, high24h: 98000, low24h: 96000, change24h: 0.5, source: "Test" };
+  let prepares = 0;
+  const sentTo = [];
+  const result = await tickBitcoinBuddyBroadcast(["https://relay"], { pubkeyHex: self }, {
+    chance: 1,
+    random: () => 0,
+    delayMs: 0,
+    getPrice: async () => price,
+    discover: async () => [userA],
+    prepare: async () => { prepares++; throw new Error("upload down"); },
+    sendCard: async () => { throw new Error("card should not be attempted without an upload"); },
+    sendText: async (relays, botKey, target) => { sentTo.push(target); return { ok: true }; },
+  });
+  assert.equal(prepares, 1);
+  assert.deepEqual(sentTo, [userA]);
+  assert.equal(result.media, false);
+}
+
+// Single card send uses injected prepare/send (no network)
+{
+  const price = { name: "Bitcoin", symbol: "BTC", price: 97500, high24h: 98000, low24h: 96000, change24h: 0.5, source: "Test" };
+  let prepares = 0;
+  const res = await sendBitcoinCard(["https://relay"], { pubkeyHex: self }, userA, price, {
+    prepare: async () => { prepares++; return { key: "k", nonce: "n", mime: "image/svg+xml", name: "bitcoin.svg", size: 1, parts: ["h"] }; },
+    sendCard: async () => ({ ok: true, id: "x" }),
+  });
+  assert.equal(prepares, 1);
+  assert.equal(res.media, true);
+}
 
 console.log("bitcoinbuddy.test.mjs: all assertions passed");
