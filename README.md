@@ -62,13 +62,12 @@ To keep the bots spam-free and protect against network/disk exhaustion:
 ### Using Docker / Podman
 
 ```bash
-# Build the Docker image
-podman build -t gupt-bots .
-# Or: docker build -t gupt-bots .
+# Build and run against a local relay node on port 3232 (detached)
+podman build -t gupt-bots . && podman run -d --name gupt-bots --restart unless-stopped --network host -e GUPT_RELAY=http://localhost:3232 gupt-bots
 
-# Run the container
-podman run --rm -it gupt-bots
-# Or: docker run --rm -it gupt-bots
+# Or with Docker:
+# docker build -t gupt-bots .
+# docker run -d --name gupt-bots --restart unless-stopped --network host -e GUPT_RELAY=http://localhost:3232 gupt-bots
 ```
 
 ### Using Docker Compose
