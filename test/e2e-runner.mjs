@@ -32,20 +32,20 @@ async function run() {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
-  let botYtdlpPub = null;
   let botCryptoPub = null;
+  let botTorrentPub = null;
 
   child.stdout.on("data", (chunk) => {
     const text = chunk.toString();
     process.stdout.write(`[container] ${text}`);
 
-    const m1 = text.match(/\[1\] YT-DLP MEDIA BOT[\s\S]*?Public Key:\s+([0-9a-f]{64})/i);
-    if (m1 && !botYtdlpPub) {
-      botYtdlpPub = m1[1];
+    const m1 = text.match(/\[1\] CRYPTO PRICE BOT[\s\S]*?Public Key:\s+([0-9a-f]{64})/i);
+    if (m1 && !botCryptoPub) {
+      botCryptoPub = m1[1];
     }
-    const m2 = text.match(/\[2\] CRYPTO PRICE BOT[\s\S]*?Public Key:\s+([0-9a-f]{64})/i);
-    if (m2 && !botCryptoPub) {
-      botCryptoPub = m2[1];
+    const m2 = text.match(/\[2\] TORRENT BOT[\s\S]*?Public Key:\s+([0-9a-f]{64})/i);
+    if (m2 && !botTorrentPub) {
+      botTorrentPub = m2[1];
     }
   });
 
@@ -55,17 +55,17 @@ async function run() {
 
   console.log("Waiting for bots to announce keys...");
   const startWait = Date.now();
-  while ((!botYtdlpPub || !botCryptoPub) && Date.now() - startWait < 20000) {
+  while ((!botCryptoPub || !botTorrentPub) && Date.now() - startWait < 20000) {
     await sleep(500);
   }
 
-  if (!botYtdlpPub || !botCryptoPub) {
+  if (!botCryptoPub || !botTorrentPub) {
     child.kill("SIGINT");
     throw new Error("Failed to detect bot public keys from container output.");
   }
 
-  console.log(`\nDetected YT-DLP Bot: ${botYtdlpPub}`);
-  console.log(`Detected Crypto Bot: ${botCryptoPub}`);
+  console.log(`\nDetected Crypto Bot: ${botCryptoPub}`);
+  console.log(`Detected Torrent Bot: ${botTorrentPub}`);
 
   // Give bots 2 seconds to finish publishing profiles & beacons
   await sleep(2000);
@@ -101,41 +101,19 @@ async function run() {
   }
   console.log("✅ TEST 2 PASSED!");
 
-  // TEST 3: YT-DLP Bot with "help"
-  console.log("\n--- TEST 3: Testing YT-DLP Bot with 'help' ---");
-  await sendTextReply(RELAYS, testUser, botYtdlpPub, "help", { source: "e2e-tester" });
-  console.log("Sent 'help' to YT-DLP Bot. Waiting for response...");
-  const reply3 = await waitForReply(testUser, botYtdlpPub, 20000);
+  // TEST 3: Torrent Bot help text
+  console.log("\n--- TEST 3: Testing Torrent Bot with 'help' ---");
+  await sendTextReply(RELAYS, testUser, botTorrentPub, "help", { source: "e2e-tester" });
+  console.log("Sent 'help' to Torrent Bot. Waiting for response...");
+  const reply3 = await waitForReply(testUser, botTorrentPub, 20000);
   if (!reply3) {
-    throw new Error("Test 3 Failed: No reply received from YT-DLP Bot for 'help'");
+    throw new Error("Test 3 Failed: No reply received from Torrent Bot for 'help'");
   }
   console.log("Received Reply:\n" + reply3.payload?.text);
-  if (!reply3.payload?.text?.includes("yt-dlp Media Downloader")) {
+  if (!reply3.payload?.text?.includes("tt0111161")) {
     throw new Error("Test 3 Failed: Response did not contain expected help text");
   }
   console.log("✅ TEST 3 PASSED!");
-
-  // TEST 4: YT-DLP Bot with audio URL
-  console.log("\n--- TEST 4: Testing YT-DLP Bot with audio URL ---");
-  const testAudioUrl = "https://actions.google.com/sounds/v1/alarms/alarm_clock.ogg";
-  await sendTextReply(RELAYS, testUser, botYtdlpPub, `audio ${testAudioUrl}`, { source: "e2e-tester" });
-  console.log(`Sent 'audio ${testAudioUrl}' to YT-DLP Bot. Waiting for response...`);
-  
-  // First reply is acknowledgment ("Downloading audio...")
-  const ack = await waitForReply(testUser, botYtdlpPub, 20000);
-  console.log("Received Ack:\n" + ack?.payload?.text);
-
-  // Second reply is the media attachment
-  const mediaReply = await waitForReply(testUser, botYtdlpPub, 40000);
-  if (!mediaReply) {
-    throw new Error("Test 4 Failed: No media attachment reply received");
-  }
-  console.log("Received Media Reply payload type:", mediaReply.payload?.type);
-  console.log("Media metadata:", JSON.stringify(mediaReply.payload?.media, null, 2));
-  if (mediaReply.payload?.type !== "media" || !mediaReply.payload?.media?.parts?.length) {
-    throw new Error("Test 4 Failed: Reply was not a valid media attachment event");
-  }
-  console.log("✅ TEST 4 PASSED (Media downloaded, encrypted, and attached successfully)!");
 
   console.log("\nAll E2E tests passed! Shutting down container...");
   child.kill("SIGINT");

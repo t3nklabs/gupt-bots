@@ -1,7 +1,7 @@
 {
   "name": "gupt-bots",
   "version": "1.0.0",
-  "description": "Two-way bots for Gupt protocol: yt-dlp media downloader and crypto price checker",
+  "description": "Two-way bots for Gupt protocol: crypto price checker, torrent index, and bitcoin beams",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

@@ -10,25 +10,12 @@ Every boot generates **brand new random cryptographic account keys** for every b
 
 ## 🤖 The Bots
 
-### 1. **yt-dlp Media Bot**
-Downloads audio or video from URLs and sends them directly back into the Gupt chat as encrypted media attachments.
-- **Audio:** `audio <url>` (e.g. `audio https://...`) — extracts audio to MP3 using ffmpeg, seals as RABTA1 blobs, and sends in chat.
-- **Video:** `video <url>` (e.g. `video https://...`) — downloads up to 720p MP4 and sends in chat.
-- **Help:** Send `help` for quick instructions.
-- *Limit: 50MB max file size.*
-
-### 2. **Crypto Price Bot**
+### 1. **Crypto Price Bot**
 Real-time cryptocurrency price, 24-hour high, and 24-hour low tracker.
 - **Usage:** Send any ticker or coin name (e.g. `btc`, `bitcoin`, `eth`, `sol`, `doge`, `pepe`).
 - Returns formatted Markdown with live price, 24h high, 24h low, and 24h change percentage.
 
-### 3. **SpotDL Music Bot**
-Downloads songs with embedded **album cover art, artist, and track metadata** as high-quality MP3s.
-- **Spotify Track Links:** `https://open.spotify.com/track/...` (automatically resolves title and artist).
-- **Song Search:** `song <artist - title>` or `song <name>` (e.g. `song Hotel California - Eagles`).
-- **YouTube Music:** Send `https://music.youtube.com/watch?v=...`.
-
-### 4. **Torrent Bot**
+### 2. **Torrent Bot**
 Send an IMDb movie link (or just the id) and get the best-seeded torrents from the [Torrentio](https://torrentio.strem.fun) index as magnet links.
 - **IMDb Link:** `https://www.imdb.com/title/tt0111161/` — the id is parsed automatically.
 - **Bare Id:** `tt0111161`.
@@ -37,7 +24,7 @@ Send an IMDb movie link (or just the id) and get the best-seeded torrents from t
 - **Delivery:** one DM per torrent, preceded by a summary card with the IMDb button — each result can be copied or forwarded on its own.
 - *Magnet URIs are sent inside code blocks because Gupt only renders `http(s)` links as clickable.*
 
-### 5. **Bitcoin Buddy** 🟠
+### 3. **Bitcoin Buddy** 🟠
 Auto-subscribe price beams: message it once and you're a subscriber, then it beams the bitcoin price to all subscribers every 4 hours (25% chance each round).
 - **Subscribe:** send anything (e.g. `hi`, `help`, `start`) — you get a confirmation plus the current BTC price on the spot.
 - **How subscribers are found:** no local DB — each beam queries the Rabta API (`GET /api/v1/events?collection=gupt/chat/dm&labels=<bot-pubkey>`) and DMs every distinct sender (anyone who ever messaged the bot).
@@ -48,12 +35,12 @@ Auto-subscribe price beams: message it once and you're a subscriber, then it bea
 
 ## 🚦 In-Memory Anti-Spam Job Queue (`src/queue.js`)
 
-To keep the bots spam-free and protect against network/disk exhaustion:
+Available infrastructure for serializing heavy jobs (currently unused — crypto, torrent, and buddy all reply instantly with no enqueue):
 * **Single Concurrency (1 task at a time):** Heavy media downloads process one at a time.
 * **Queue Notifications:** If a job is already in progress, new requests are queued, and the user is told their position (e.g. `⏳ You are at position #1 in line`).
 * **Auto-Start:** When preceding tasks complete, the next job begins automatically and informs the user.
 * **Per-User Limits:** Each user can have only 1 active or queued download at a time. Repeat requests while one is pending are rejected.
-* **Non-Blocking Commands:** Lightweight queries (`help`, crypto price checks) bypass the queue and answer instantly.
+* **Instant Replies:** All current bots (crypto, torrent, buddy) answer instantly with no enqueue.
 
 ---
 
@@ -92,15 +79,7 @@ When the container starts, it displays a startup banner with the fresh public ke
     https://1.rabta.space
 
   ─────────────────────────────────────────────────────────────────────────────
-  🤖 [1] YT-DLP MEDIA BOT
-  ─────────────────────────────────────────────────────────────────────────────
-  Display Name: yt-dlp Bot
-  Public Key:   <64-hex-chars>
-  Address:      ed25519:<64-hex-chars>
-  Usage:        Send "audio <url>" (MP3) or "video <url>" (MP4)
-
-  ─────────────────────────────────────────────────────────────────────────────
-  🪙 [2] CRYPTO PRICE BOT
+  🪙 [1] CRYPTO PRICE BOT
   ─────────────────────────────────────────────────────────────────────────────
   Display Name: Crypto Price Bot
   Public Key:   <64-hex-chars>
@@ -164,7 +143,6 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `GUPT_RELAY` | `https://1.rabta.space` | Comma-separated list of Rabta relay URLs |
 | `POLL_INTERVAL_MS` | `2500` | Inbound DM poll interval in milliseconds |
 | `BEACON_INTERVAL_MS` | `3600000` (1h) | Directory beacon republish heartbeat (expiry: 90 mins) |
-| `YTDLP_PATH` | `yt-dlp` | Path to yt-dlp binary |
 | `TORRENTIO_BASE` | `https://torrentio.strem.fun` | Torrentio addon base URL (self-host or mirror) |
 | `CINEMETA_BASE` | `https://v3-cinemeta.strem.io` | Cinemeta metadata base URL |
 | `TORRENT_RESULTS` | `100` | Max torrents per request (1–100) |

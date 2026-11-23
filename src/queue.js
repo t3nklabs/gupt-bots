@@ -118,7 +118,9 @@ export class JobQueue {
   }
 }
 
-// Global shared media processing queue (1 heavy download/upload at a time)
+// Global shared media processing queue (1 heavy download/upload at a time).
+// NOTE: currently no bot enqueues jobs — crypto/torrent/buddy reply instantly.
+// Kept as infrastructure for future bots with heavy downloads/uploads.
 export const globalMediaQueue = new JobQueue("media-queue", {
   maxQueueSize: 50,
   maxPerUser: 1,

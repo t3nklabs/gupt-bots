@@ -2,11 +2,10 @@
 
 This repository is a **starter template and reference implementation** for building two-way, end-to-end encrypted autonomous bots on the [Gupt](https://gupt.app) decentralized messaging network and [Rabta Relay Protocol](https://gist.githubusercontent.com/besoeasy/098bbed1f63a57a16f208c15155fbf7c/raw/SKILL.md).
 
-It ships with 4 production reference bots:
-1. **yt-dlp Media Bot** (`src/bots/ytdlp.js`) — Downloads audio/video from URLs and sends attachments.
-2. **Crypto Price Bot** (`src/bots/crypto.js`) — Live crypto price, 24h high, and 24h low tracker.
-3. **SpotDL Music Bot** (`src/bots/music.js`) — Resolves Spotify tracks and downloads MP3s with embedded album art and metadata.
-4. **Torrent Bot** (`src/bots/torrent.js`) — Parses an IMDb movie link or id and returns the highest-seeded torrents from the Torrentio index as magnet links.
+It ships with 3 production reference bots:
+1. **Crypto Price Bot** (`src/bots/crypto.js`) — Live crypto price, 24h high, and 24h low tracker.
+2. **Torrent Bot** (`src/bots/torrent.js`) — Parses an IMDb movie link or id and returns the highest-seeded torrents from the Torrentio index as magnet links.
+3. **Bitcoin Buddy** (`src/bots/bitcoinbuddy.js`) — Opt-in BTC price beams to subscribers every 4h (single blob upload fanned out to all recipients).
 
 Instead of proprietary API tokens or central gateways, bots on Gupt communicate directly with decentralized relays by generating cryptographic Ed25519 keys and exchanging authenticated Nostr/Rabta ciphertext envelopes.
 
@@ -258,7 +257,7 @@ The Torrent Bot answers IMDb movie links and ids with magnet links from the publ
 
 ## 🚦 In-Memory Anti-Spam Queue System (`src/queue.js`)
 
-Heavy media downloads and processing jobs are serialized with an in-memory `JobQueue`:
+`JobQueue` infrastructure for serializing heavy jobs (currently unused — all bots reply instantly):
 * **Concurrency = 1:** Executes 1 heavy task at a time to prevent CPU, disk, and relay network exhaustion.
 * **Position Notifications:** If a task is executing, incoming jobs receive an immediate DM with their queue position (`⏳ Added to queue! You are at position #1...`).
 * **Per-User Throttling:** Users are restricted to 1 active or queued job at a time. Repeat spam requests are rejected with a helpful warning.

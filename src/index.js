@@ -1,8 +1,6 @@
 import { generateKeypair } from "./crypto.js";
 import { parseRelays, pollInbox } from "./relay.js";
-import { handleYtdlpMessage, ytdlpProfile, ytdlpBeacon } from "./bots/ytdlp.js";
 import { handleCryptoMessage, cryptoProfile, cryptoBeacon } from "./bots/crypto.js";
-import { handleMusicMessage, musicProfile, musicBeacon } from "./bots/music.js";
 import { handleTorrentMessage, torrentProfile, torrentBeacon } from "./bots/torrent.js";
 import {
   handleBitcoinBuddyMessage,
@@ -26,25 +24,11 @@ const BEACON_INTERVAL_MS = parseInt(process.env.BEACON_INTERVAL_MS || String(60 
 // this list is never announced, so keep it complete.
 const BOTS = [
   {
-    key: { ...generateKeypair(), name: "yt-dlp Bot" },
-    profile: ytdlpProfile,
-    beacon: ytdlpBeacon,
-    handler: handleYtdlpMessage,
-    label: "yt-dlp",
-  },
-  {
     key: { ...generateKeypair(), name: "Crypto Price Bot" },
     profile: cryptoProfile,
     beacon: cryptoBeacon,
     handler: handleCryptoMessage,
     label: "crypto",
-  },
-  {
-    key: { ...generateKeypair(), name: "SpotDL Music Bot" },
-    profile: musicProfile,
-    beacon: musicBeacon,
-    handler: handleMusicMessage,
-    label: "music",
   },
   {
     key: { ...generateKeypair(), name: "Torrent Bot" },
@@ -72,7 +56,7 @@ function recordEventId(id) {
 }
 
 function printBanner() {
-  const [botYtdlp, botCrypto, botMusic, botTorrent, botBuddy] = BOTS.map((b) => b.key);
+  const [botCrypto, botTorrent, botBuddy] = BOTS.map((b) => b.key);
   console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                            GUPT TWO-WAY BOTS                                  ║
@@ -83,15 +67,7 @@ function printBanner() {
     ${RELAYS.join("\n    ")}
 
   ─────────────────────────────────────────────────────────────────────────────
-  🤖 [1] YT-DLP MEDIA BOT
-  ─────────────────────────────────────────────────────────────────────────────
-  Display Name: ${botYtdlp.name}
-  Public Key:   ${botYtdlp.pubkeyHex}
-  Address:      ${botYtdlp.address}
-  Usage:        Send "audio <url>" (MP3) or "video <url>" (MP4)
-
-  ─────────────────────────────────────────────────────────────────────────────
-  🪙 [2] CRYPTO PRICE BOT
+  🪙 [1] CRYPTO PRICE BOT
   ─────────────────────────────────────────────────────────────────────────────
   Display Name: ${botCrypto.name}
   Public Key:   ${botCrypto.pubkeyHex}
@@ -99,15 +75,7 @@ function printBanner() {
   Usage:        Send crypto symbol or name (e.g. "btc", "ethereum", "sol")
 
   ─────────────────────────────────────────────────────────────────────────────
-  🎵 [3] SPOTDL MUSIC BOT
-  ─────────────────────────────────────────────────────────────────────────────
-  Display Name: ${botMusic.name}
-  Public Key:   ${botMusic.pubkeyHex}
-  Address:      ${botMusic.address}
-  Usage:        Send Spotify track link or "song <artist - title>"
-
-  ─────────────────────────────────────────────────────────────────────────────
-  🧲 [4] TORRENT BOT
+  🧲 [2] TORRENT BOT
   ─────────────────────────────────────────────────────────────────────────────
   Display Name: ${botTorrent.name}
   Public Key:   ${botTorrent.pubkeyHex}
@@ -115,7 +83,7 @@ function printBanner() {
   Usage:        Send an IMDb movie link or id (e.g. "tt0111161"), optionally prefixed with "1080p"
 
   ─────────────────────────────────────────────────────────────────────────────
-  🟠 [5] BITCOIN BUDDY BOT
+  🟠 [3] BITCOIN BUDDY BOT
   ─────────────────────────────────────────────────────────────────────────────
   Display Name: ${botBuddy.name}
   Public Key:   ${botBuddy.pubkeyHex}
