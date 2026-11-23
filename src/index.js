@@ -18,7 +18,7 @@ import {
 
 const RELAYS = parseRelays(process.env.GUPT_RELAY);
 const POLL_INTERVAL_MS = parseInt(process.env.POLL_INTERVAL_MS || "2500", 10);
-const BEACON_INTERVAL_MS = parseInt(process.env.BEACON_INTERVAL_MS || String(60 * 60 * 1000), 10); // 1 hour
+const BEACON_INTERVAL_MS = parseInt(process.env.BEACON_INTERVAL_MS || String(9 * 60 * 1000), 10); // 9 minutes
 
 // Every bot that must show up in the Gupt /bots directory. A bot missing from
 // this list is never announced, so keep it complete.
@@ -199,9 +199,10 @@ async function main() {
   printBanner();
   await announceBots();
 
-  // Refresh the heartbeat every BEACON_INTERVAL_MS (1 hour by default). Beacons
-  // live 90 minutes and /bots drops anything older than an hour, so the
-  // interval must stay below 60 minutes or the bots disappear between beats.
+  // Refresh the heartbeat every BEACON_INTERVAL_MS (9 minutes by default). Beacons
+  // live 10 minutes and /bots drops anything older than an hour, so the
+  // interval must stay below the 10-minute expiry or the bots disappear
+  // between beats — one missed beat unlists them.
   setInterval(announceBots, BEACON_INTERVAL_MS).unref();
 
   // Bitcoin Buddy: every 4h roll a 25% chance to beam BTC to everyone who

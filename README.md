@@ -108,7 +108,7 @@ Each boot (and every `BEACON_INTERVAL_MS`) publishes every bot's profile and dir
 Anything less than a full count is called out by name, with the relay and the relay's error, and a bot no relay accepts gets an explicit `is NOT announced and will not appear in /bots` line. The directory read retries a few times because relays are eventually consistent. Two rules keep this honest:
 
 * Every bot must be listed in `BOTS` in `src/index.js` — a bot left out of that array is never announced.
-* `BEACON_INTERVAL_MS` must stay **below 60 minutes**: `/bots` drops beacons created more than an hour ago, even if the event itself lives longer.
+* `BEACON_INTERVAL_MS` must stay **below 10 minutes**: beacons expire after 10 minutes, so a longer gap unlists the bots between beats.
 
 If a bot is missing from `/bots`, the startup log says which relay refused it. A stale container is the other common cause — rebuild after pulling:
 
@@ -142,7 +142,7 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 |---|---|---|
 | `GUPT_RELAY` | `https://1.rabta.space` | Comma-separated list of Rabta relay URLs |
 | `POLL_INTERVAL_MS` | `2500` | Inbound DM poll interval in milliseconds |
-| `BEACON_INTERVAL_MS` | `3600000` (1h) | Directory beacon republish heartbeat (expiry: 90 mins) |
+| `BEACON_INTERVAL_MS` | `540000` (9m) | Directory beacon republish heartbeat (expiry: 10 mins) |
 | `TORRENTIO_BASE` | `https://torrentio.strem.fun` | Torrentio addon base URL (self-host or mirror) |
 | `CINEMETA_BASE` | `https://v3-cinemeta.strem.io` | Cinemeta metadata base URL |
 | `TORRENT_RESULTS` | `100` | Max torrents per request (1–100) |

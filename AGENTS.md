@@ -93,8 +93,8 @@ Publishes your bot's display name, description, and website. Gupt clients automa
 ### 2. Directory Beacon (`gupt/bot/beacon`)
 Announces your bot in the Gupt `/bots` tab for discovery:
 
-* **Heartbeat:** Published every **1 hour**.
-* **Expiry:** Set to **90 minutes** (`created_at + 5400s`) so inactive/offline bots cleanly disappear from the directory.
+* **Heartbeat:** Published every **9 minutes**.
+* **Expiry:** Set to **10 minutes** (`created_at + 600s`) so inactive/offline bots cleanly disappear from the directory.
 
 ```json
 {
@@ -127,7 +127,7 @@ After publishing, `verifyBots()` reads `gupt/bot/beacon` back from every relay (
 Two invariants this protects:
 
 * A bot must be in the `BOTS` array in `src/index.js`; a bot outside it is never announced and never polled.
-* `BEACON_INTERVAL_MS` must stay under 60 minutes, or the directory drops the bot between heartbeats even though the beacon has not expired.
+* `BEACON_INTERVAL_MS` must stay under 10 minutes, or the directory drops the bot between heartbeats even though the beacon has not expired.
 
 ### 3. Direct Message (DM) Wire Format
 Incoming and outgoing DMs live in collection `gupt/chat/dm`:

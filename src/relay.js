@@ -371,7 +371,7 @@ export async function publishProfile(relays, botKey, { name, about = "", website
   return await publishEvent(relays, event);
 }
 
-const DEFAULT_BEACON_TTL_SECONDS = 90 * 60; // 90 minutes (dead bots unlist quickly)
+const DEFAULT_BEACON_TTL_SECONDS = 10 * 60; // 10 minutes (bots re-announce every 9)
 
 /** Publish directory beacon (gupt/bot/beacon) */
 export async function publishBeacon(
