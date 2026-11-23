@@ -3,11 +3,6 @@ name: Publish Docker image
 # Manual only: Actions tab -> "Publish Docker image" -> Run workflow.
 on:
   workflow_dispatch:
-    inputs:
-      platforms:
-        description: "Target platforms (comma-separated). Use linux/amd64,linux/arm64 for multi-arch."
-        required: false
-        default: "linux/amd64"
 
 permissions:
   contents: read
@@ -33,7 +28,6 @@ jobs:
         run: echo "IMAGE_NAME=${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
 
       - name: Set up QEMU
-        if: contains(inputs.platforms, 'arm')
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
@@ -60,7 +54,7 @@ jobs:
         with:
           context: .
           push: true
-          platforms: ${{ inputs.platforms }}
+          platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -75,5 +69,5 @@ jobs:
             echo "${{ steps.meta.outputs.tags }}"
             echo '```'
             echo ""
-            echo "Platforms: \`${{ inputs.platforms }}\`"
+            echo "Platforms: \`linux/amd64,linux/arm64\`"
           } >> "$GITHUB_STEP_SUMMARY"
