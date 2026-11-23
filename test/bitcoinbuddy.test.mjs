@@ -56,10 +56,28 @@ const subs2 = await discoverSubscribers(["https://relay1"], { pubkeyHex: self },
 assert.deepEqual(subs2, [userB]);
 __resetBlocklistForTests([]);
 
-// Card bytes are a real SVG document
+// Card is square with a 24h range bar; marker position + accent follow the data
 const svgBytes = buildBitcoinSvgBytes({ name: "Bitcoin", symbol: "BTC", price: 97500.5, high24h: 98000, low24h: 96000, change24h: 1.5, source: "Binance" });
 assert.ok(svgBytes instanceof Uint8Array && svgBytes.length > 500);
-assert.match(new TextDecoder().decode(svgBytes.slice(0, 200)), /<svg/);
+{
+  const svg = new TextDecoder().decode(svgBytes);
+  assert.match(svg, /<svg/);
+  assert.match(svg, /width="800" height="800"/);
+  assert.match(svg, /24H RANGE/);
+  assert.match(svg, /#22c55e/); // up day -> green
+  // (97500.5-96000)/(98000-96000) = 75% -> marker at 60 + 0.75*680 = 570
+  assert.match(svg, /cx="570"/);
+}
+{
+  // Down day -> red accent
+  const down = new TextDecoder().decode(buildBitcoinSvgBytes({ price: 95000, high24h: 98000, low24h: 96000, change24h: -2.5, source: "X" }));
+  assert.match(down, /#ef4444/);
+  // Flat/missing range -> centered marker, no crash
+  const flat = new TextDecoder().decode(buildBitcoinSvgBytes({ price: 95000, high24h: 96000, low24h: 96000, change24h: 0, source: "X" }));
+  assert.match(flat, /cx="400"/);
+  const empty = new TextDecoder().decode(buildBitcoinSvgBytes(null));
+  assert.match(empty, /N\/A/);
+}
 
 // Broadcast uploads the card ONCE then fans out to N recipients
 {

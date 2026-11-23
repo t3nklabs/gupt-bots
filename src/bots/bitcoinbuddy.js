@@ -5,7 +5,7 @@ import {
   prepareMediaUpload,
   sendPreparedMedia,
 } from "../relay.js";
-import { getCryptoData, buildCryptoSvg } from "./crypto.js";
+import { getCryptoData } from "./crypto.js";
 
 export const bitcoinBuddyProfile = {
   name: "Bitcoin Buddy",
@@ -210,9 +210,104 @@ export async function sendBitcoinPrice(relays, botKey, targetPubHex, { broadcast
   });
 }
 
-/** SVG card bytes for bitcoin data (same card the Crypto bot sends). */
+function escapeXml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&apos;");
+}
+
+/**
+ * Square (800x800) Bitcoin Buddy price card. The hero is a 24h range bar:
+ * LOW on the left, HIGH on the right, with a marker showing where the
+ * current price sits between them. Price, fill and marker all use green
+ * (24h up) or red (24h down) so the direction reads at a glance.
+ */
+export function buildBitcoinBuddySvg(data) {
+  const price = Number(data?.price);
+  const high = Number(data?.high24h);
+  const low = Number(data?.low24h);
+  const hasPrice = Number.isFinite(price);
+  const hasRange = Number.isFinite(high) && Number.isFinite(low);
+  const change = data?.change24h !== null && data?.change24h !== undefined && !isNaN(Number(data?.change24h))
+    ? Number(data.change24h)
+    : null;
+  const up = change === null ? true : change >= 0;
+  const accent = up ? "#22c55e" : "#ef4444";
+  const accentSoft = up ? "rgba(34,197,94,0.16)" : "rgba(239,68,68,0.16)";
+  const changeLabel = change === null ? "N/A" : `${change > 0 ? "+" : ""}${change.toFixed(2)}%`;
+  const arrow = change === null ? "" : up ? "▲" : "▼";
+
+  const priceLabel = hasPrice ? formatPrice(price) : "N/A";
+  const highLabel = hasRange ? formatPrice(high) : "N/A";
+  const lowLabel = hasRange ? formatPrice(low) : "N/A";
+
+  let pct = 0.5;
+  let flat = true;
+  if (hasRange && high > low && hasPrice) {
+    pct = Math.min(1, Math.max(0, (price - low) / (high - low)));
+    flat = false;
+  }
+  const markerX = Math.round(60 + pct * 680);
+  const fillW = Math.max(0, Math.round(pct * 680));
+  const pctLabel = flat ? "flat range" : `${Math.round(pct * 100)}% up the range`;
+  const source = String(data?.source || "Crypto");
+  const stamp = new Date().toISOString().replace("T", " ").slice(0, 16) + " UTC";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>\n` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="800" viewBox="0 0 800 800" font-family="Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif">\n` +
+    `  <defs>\n` +
+    `    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">\n` +
+    `      <stop offset="0" stop-color="#0f172a"/>\n` +
+    `      <stop offset="1" stop-color="#1e293b"/>\n` +
+    `    </linearGradient>\n` +
+    `    <linearGradient id="coin" x1="0" y1="0" x2="1" y2="1">\n` +
+    `      <stop offset="0" stop-color="#fbbf24"/>\n` +
+    `      <stop offset="1" stop-color="#f59e0b"/>\n` +
+    `    </linearGradient>\n` +
+    `  </defs>\n` +
+    `  <rect x="0" y="0" width="800" height="800" rx="36" fill="url(#bg)"/>\n` +
+    `  <rect x="1.5" y="1.5" width="797" height="797" rx="34.5" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="3"/>\n` +
+    `  <circle cx="700" cy="90" r="120" fill="rgba(245,158,11,0.08)"/>\n` +
+    `  <circle cx="110" cy="740" r="100" fill="rgba(255,255,255,0.03)"/>\n` +
+    `  <circle cx="400" cy="300" r="180" fill="${accentSoft}" opacity="0.35"/>\n` +
+    `  <circle cx="96" cy="116" r="46" fill="url(#coin)"/>\n` +
+    `  <text x="96" y="133" text-anchor="middle" font-size="48" font-weight="800" fill="#0f172a">₿</text>\n` +
+    `  <text x="164" y="108" font-size="40" font-weight="800" fill="#ffffff">Bitcoin</text>\n` +
+    `  <text x="164" y="142" font-size="22" font-weight="600" letter-spacing="3" fill="#94a3b8">BTC / USD</text>\n` +
+    `  <g>\n` +
+    `    <rect x="600" y="86" width="136" height="42" rx="21" fill="rgba(34,197,94,0.15)" stroke="rgba(34,197,94,0.5)" stroke-width="1.5"/>\n` +
+    `    <circle cx="624" cy="107" r="6" fill="#22c55e"/>\n` +
+    `    <text x="672" y="114" text-anchor="middle" font-size="19" font-weight="700" letter-spacing="2" fill="#4ade80">LIVE</text>\n` +
+    `  </g>\n` +
+    `  <text x="64" y="252" font-size="20" font-weight="600" letter-spacing="4" fill="#64748b">CURRENT PRICE</text>\n` +
+    `  <text x="60" y="340" font-size="84" font-weight="800" fill="${accent}">${escapeXml(priceLabel)}</text>\n` +
+    `  <g>\n` +
+    `    <rect x="60" y="366" width="216" height="54" rx="27" fill="${accentSoft}" stroke="${accent}" stroke-width="1.5"/>\n` +
+    `    <text x="168" y="401" text-anchor="middle" font-size="24" font-weight="800" fill="${accent}">${escapeXml(`${arrow} ${changeLabel}`)}</text>\n` +
+    `    <text x="640" y="401" text-anchor="middle" font-size="20" font-weight="600" fill="#64748b">24h</text>\n` +
+    `  </g>\n` +
+    `  <text x="64" y="490" font-size="18" font-weight="600" letter-spacing="3" fill="#64748b">24H RANGE</text>\n` +
+    `  <text x="736" y="490" text-anchor="end" font-size="18" font-weight="700" fill="${accent}">${escapeXml(pctLabel)}</text>\n` +
+    `  <rect x="60" y="512" width="680" height="30" rx="15" fill="rgba(255,255,255,0.08)"/>\n` +
+    (fillW > 0
+      ? `  <rect x="60" y="512" width="${fillW}" height="30" rx="15" fill="${accent}" opacity="0.85"/>\n`
+      : "") +
+    `  <circle cx="${markerX}" cy="527" r="27" fill="${accent}" opacity="0.25"/>\n` +
+    `  <circle cx="${markerX}" cy="527" r="16" fill="${accent}" stroke="#0f172a" stroke-width="5"/>\n` +
+    `  <text x="64" y="582" font-size="18" font-weight="600" letter-spacing="2" fill="#64748b">LOW  <tspan fill="#e2e8f0" font-weight="800">${escapeXml(lowLabel)}</tspan></text>\n` +
+    `  <text x="736" y="582" text-anchor="end" font-size="18" font-weight="600" letter-spacing="2" fill="#64748b">HIGH  <tspan fill="#e2e8f0" font-weight="800">${escapeXml(highLabel)}</tspan></text>\n` +
+    `  <line x1="60" y1="700" x2="740" y2="700" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>\n` +
+    `  <text x="64" y="732" font-size="16" font-weight="700" letter-spacing="2" fill="#64748b">BITCOIN BUDDY</text>\n` +
+    `  <text x="736" y="732" text-anchor="end" font-size="16" font-weight="600" fill="#475569">${escapeXml(source)} • ${escapeXml(stamp)}</text>\n` +
+    `</svg>\n`;
+}
+
+/** SVG card bytes for bitcoin data (square Buddy card with 24h range bar). */
 export function buildBitcoinSvgBytes(data) {
-  return new TextEncoder().encode(buildCryptoSvg(data));
+  return new TextEncoder().encode(buildBitcoinBuddySvg(data));
 }
 
 /**
