@@ -20,6 +20,65 @@ const MAX_TTL_SECONDS = EXPIRY_DAYS * 24 * 60 * 60;
 // short would be dead before the reply even reaches the relay.
 const MIN_REPLY_TTL_SECONDS = 60;
 
+// ─── Blob budget (Rabta relay api.md + gupt client) ───────────────────────
+// Relay enforces `bad_blobs` unless `blobs` is 0–8 unique hashes, and
+// `too_large` (413) when a single blob exceeds 0.1% of STORAGE.
+// Live 1.rabta.space reports upload.max_single_bytes = 23,333,072 (~22.3 MiB).
+// Gupt client splits >2MiB files across up to 8 equal parts so no part
+// outgrows a tight relay. Check BEFORE uploading: a failed part leaves an
+// unclaimed blob (6h expiry, counts toward the 100-blob unclaimed cap).
+export const BLOB_MAX_PARTS = 8;
+export const BLOB_SPLIT_THRESHOLD = 2 * 1024 * 1024;
+const SEAL_OVERHEAD_BYTES = 7 + 16 + 16; // "RABTA1"(6)+ver(1) + salt(16) + GCM tag(16)
+// 0.1% of the default 20GB STORAGE — conservative fallback when /api/v1/node
+// is unreachable. Always prefer the live value from fetchMaxSingleBytes().
+const FALLBACK_MAX_SINGLE_BYTES = 20 * 1024 * 1024;
+
+/** Live per-blob cap: min(upload.max_single_bytes) across reachable relays. */
+export async function fetchMaxSingleBytes(relays) {
+  const targets = Array.isArray(relays) && relays.length ? relays : DEFAULT_RELAYS;
+  const caps = [];
+  await Promise.allSettled(
+    targets.map(async (relay) => {
+      const res = await fetch(`${String(relay).replace(/\/+$/, "")}/api/v1/node`, {
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!res.ok) return;
+      const node = await res.json().catch(() => ({}));
+      const cap = Number(node?.upload?.max_single_bytes ?? node?.blobs?.max_single_bytes);
+      if (Number.isFinite(cap) && cap > 0) caps.push(cap);
+    }),
+  );
+  if (!caps.length) return FALLBACK_MAX_SINGLE_BYTES;
+  return Math.min(...caps);
+}
+
+/**
+ * How many RABTA1 parts a file of `size` bytes needs. Small files stay one
+ * blob; big files scale as ceil(size / 2MiB) up to the 8-blob event cap.
+ * Throws when even 8 parts cannot fit under `maxSingleBytes`.
+ */
+export function decidePartCount(size, maxSingleBytes) {
+  const sizeNum = Math.floor(Number(size));
+  if (!Number.isFinite(sizeNum) || sizeNum < 0) throw new Error("Invalid file size");
+  if (sizeNum <= BLOB_SPLIT_THRESHOLD) return 1;
+  const cap = Number(maxSingleBytes) || FALLBACK_MAX_SINGLE_BYTES;
+  const byThreshold = Math.min(BLOB_MAX_PARTS, Math.ceil(sizeNum / BLOB_SPLIT_THRESHOLD));
+  // Sealed part ≈ plain slice + 39B overhead; grow to 8 if slices still too big.
+  let parts = byThreshold;
+  while (parts < BLOB_MAX_PARTS && Math.ceil(sizeNum / parts) + SEAL_OVERHEAD_BYTES > cap) {
+    parts += 1;
+  }
+  if (Math.ceil(sizeNum / parts) + SEAL_OVERHEAD_BYTES > cap) {
+    const maxFile = (cap - SEAL_OVERHEAD_BYTES) * BLOB_MAX_PARTS;
+    throw new Error(
+      `File too large: ${(sizeNum / 1048576).toFixed(1)}MB exceeds the relay blob budget ` +
+        `(8 blobs × ${(cap / 1048576).toFixed(1)}MB ≈ ${(maxFile / 1048576).toFixed(0)}MB max).`,
+    );
+  }
+  return parts;
+}
+
 /**
  * Clamp a TTL to sane bounds. Anything unusable falls back to the default
  * lifetime, so callers can pass along whatever the sender used.
@@ -109,6 +168,11 @@ export async function sendDM(
   { relays, target, payload, blobHashes = [], ttlSeconds },
   botKey,
 ) {
+  const deduped = [...new Set(blobHashes.map((h) => String(h).toLowerCase()))];
+  // Relay rejects `bad_blobs` unless blobs is 0–8 unique 64-char hex hashes.
+  if (deduped.length > BLOB_MAX_PARTS) {
+    throw new Error(`Too many blobs: ${deduped.length} exceeds the 8-blob event cap.`);
+  }
   const privBytes = hexToBytes(botKey.privkeyHex);
   const targetClean = target.replace(/^ed25519:/i, "").trim().toLowerCase();
 
@@ -121,7 +185,7 @@ export async function sendDM(
   const now = Math.floor(Date.now() / 1000);
   const expires = resolveExpiry(ttlSeconds, now);
   const envelope = {
-    blobs: [...new Set(blobHashes.map((h) => String(h).toLowerCase()))],
+    blobs: deduped,
     collection: "gupt/chat/dm",
     created_at: now,
     data: { v: 1, nonce: nonceB64, ciphertext: cipherB64 },
@@ -169,7 +233,10 @@ export async function sendMediaReply(relays, botKey, targetPubHex, filePath, cap
   const name = basename(filePath);
   const mediaKey = webcrypto.getRandomValues(new Uint8Array(32));
   const mediaNonce = webcrypto.getRandomValues(new Uint8Array(12));
-  const partCount = fileBytes.byteLength > 2 * 1024 * 1024 ? 8 : 1;
+  // Inspect the relay's per-blob cap BEFORE uploading: 8 blobs/event max, and
+  // each sealed part must fit under max_single_bytes (0.1% of STORAGE).
+  const maxSingle = options.maxSingleBytes || (await fetchMaxSingleBytes(relays));
+  const partCount = decidePartCount(fileBytes.byteLength, maxSingle);
   const chunks = splitParts(fileBytes, partCount);
   const parts = await Promise.all(
     chunks.map((chunk) => uploadBlob(relays, sealRabta1(chunk, mediaKey))),
@@ -209,7 +276,9 @@ export async function prepareMediaUpload(relays, fileBytes, fileName, options = 
   const name = String(fileName || "file");
   const mediaKey = webcrypto.getRandomValues(new Uint8Array(32));
   const mediaNonce = webcrypto.getRandomValues(new Uint8Array(12));
-  const partCount = bytes.byteLength > 2 * 1024 * 1024 ? 8 : 1;
+  // Same pre-upload budget check as sendMediaReply — never orphan blobs.
+  const maxSingle = options.maxSingleBytes || (await fetchMaxSingleBytes(relays));
+  const partCount = decidePartCount(bytes.byteLength, maxSingle);
   const chunks = splitParts(bytes, partCount);
   const parts = await Promise.all(
     chunks.map((chunk) => uploadBlob(relays, sealRabta1(chunk, mediaKey))),
@@ -227,6 +296,14 @@ export async function prepareMediaUpload(relays, fileBytes, fileName, options = 
 
 /** Send an already-uploaded media descriptor to one recipient (no re-upload). */
 export async function sendPreparedMedia(relays, botKey, targetPubHex, prepared, caption = "", options = {}) {
+  if (!Array.isArray(prepared?.parts) || !prepared.parts.length) {
+    throw new Error("Invalid media descriptor: missing blob parts.");
+  }
+  if (prepared.parts.length > BLOB_MAX_PARTS) {
+    throw new Error(
+      `Too many blobs: ${prepared.parts.length} exceeds the 8-blob event cap.`,
+    );
+  }
   const payload = JSON.stringify({
     type: "media",
     text: caption || prepared.name,
