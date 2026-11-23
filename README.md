@@ -31,16 +31,24 @@ Auto-subscribe price beams: message it once and you're a subscriber, then it bea
 - **Mute / re-subscribe:** send `stop` to mute beams, anything else to re-subscribe.
 - **Delivery:** one square price-card image DM per subscriber per beam — big price in green/red by 24h direction, plus a 24h range bar with a marker showing where the price sits between low and high (text caption as fallback). The card blob is uploaded **once** and the hash/key reused for all recipients; if the upload fails the beam falls back to text.
 
+### 4. **Weather Bot** 🌦
+Send a city and get current conditions plus a 3-day forecast — as a weather card with the same numbers as text in the caption.
+- **Usage:** `mumbai`, `paris, france`, `tokyo jp`, `new york` — a trailing country name or 2-letter code narrows the match.
+- **Ambiguity:** candidates are ranked by population, so `paris` is Paris, France while `paris us` is Paris, Texas.
+- **Units:** °C and km/h by default, °F and mph for places in the United States. Add `f` or `c` to override (e.g. `dubai f`).
+- **Data:** [Open-Meteo](https://open-meteo.com) geocoding + forecast — no API key, no signup. Forecasts are cached for 5 minutes per location.
+- *Unknown place names get a hint to add the country rather than a silent guess.*
+
 ---
 
 ## 🚦 In-Memory Anti-Spam Job Queue (`src/queue.js`)
 
-Available infrastructure for serializing heavy jobs (currently unused — crypto, torrent, and buddy all reply instantly with no enqueue):
+Available infrastructure for serializing heavy jobs (currently unused — all four bots reply instantly with no enqueue):
 * **Single Concurrency (1 task at a time):** Heavy media downloads process one at a time.
 * **Queue Notifications:** If a job is already in progress, new requests are queued, and the user is told their position (e.g. `⏳ You are at position #1 in line`).
 * **Auto-Start:** When preceding tasks complete, the next job begins automatically and informs the user.
 * **Per-User Limits:** Each user can have only 1 active or queued download at a time. Repeat requests while one is pending are rejected.
-* **Instant Replies:** All current bots (crypto, torrent, buddy) answer instantly with no enqueue.
+* **Instant Replies:** Crypto, torrent, buddy and weather all answer instantly with no enqueue.
 
 ---
 
@@ -154,3 +162,7 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `BITCOIN_BUDDY_SUBSCRIBER_LIMIT` | `500` | Max DM events read per relay when discovering subscribers (10–1000) |
 | `BITCOIN_BUDDY_MESSAGE_DELAY_MS` | `200` | Pause between per-subscriber beam DMs (0–2000) |
 | `BITCOIN_BUDDY_BLOCKLIST_PATH` | `<cwd>/data/bitcoin-buddy-blocklist.json` | Where `stop` mutes are persisted |
+| `WEATHER_FORECAST_DAYS` | `3` | Days in the forecast strip (1–7) |
+| `WEATHER_CACHE_TTL_MS` | `300000` (5m) | How long a location's forecast stays cached; `0` disables |
+| `WEATHER_GEOCODE_BASE` | `https://geocoding-api.open-meteo.com` | Geocoder base URL (mirror or self-host) |
+| `WEATHER_FORECAST_BASE` | `https://api.open-meteo.com` | Forecast API base URL (mirror or self-host) |

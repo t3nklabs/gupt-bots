@@ -2,10 +2,11 @@
 
 This repository is a **starter template and reference implementation** for building two-way, end-to-end encrypted autonomous bots on the [Gupt](https://gupt.app) decentralized messaging network and [Rabta Relay Protocol](https://gist.githubusercontent.com/besoeasy/098bbed1f63a57a16f208c15155fbf7c/raw/SKILL.md).
 
-It ships with 3 production reference bots:
+It ships with 4 production reference bots:
 1. **Crypto Price Bot** (`src/bots/crypto.js`) — Live crypto price, 24h high, and 24h low tracker.
 2. **Torrent Bot** (`src/bots/torrent.js`) — Parses an IMDb movie link or id and returns the highest-seeded torrents from the Torrentio index as magnet links.
 3. **Bitcoin Buddy** (`src/bots/bitcoinbuddy.js`) — Opt-in BTC price beams to subscribers every 4h (single blob upload fanned out to all recipients).
+4. **Weather Bot** (`src/bots/weather.js`) — City (plus optional country) in, current conditions and a 3-day forecast out, as a card image with a text caption.
 
 Instead of proprietary API tokens or central gateways, bots on Gupt communicate directly with decentralized relays by generating cryptographic Ed25519 keys and exchanging authenticated Nostr/Rabta ciphertext envelopes.
 
@@ -255,6 +256,47 @@ The Torrent Bot answers IMDb movie links and ids with magnet links from the publ
 
 ---
 
+## 🌦 Weather Bot (`src/bots/weather.js`)
+
+City in, conditions out. The whole bot is two keyless [Open-Meteo](https://open-meteo.com)
+calls and a formatter — the closest thing to a freebie in this repo, and the best
+template for "one query → one upstream API → one reply".
+
+* **Geocoding:** `GET https://geocoding-api.open-meteo.com/v1/search?name=<city>&count=5`.
+  Results are population-ranked, so `paris` is Paris, France (2.1M) rather than
+  Paris, Texas (24k) without any special casing.
+* **Country hints:** the API has no "city + country" field, and `name=mumbai in` returns
+  **nothing**. `geocodePlace()` therefore tries the whole string first (so `new york` is
+  never split), then peels off the last comma or space: a 2-letter token or alias
+  (`uk` → GB, `usa` → US, …) is sent as the API's `countryCode` filter, a country *name*
+  is matched against the returned `country` / `admin1` fields. A hint that matches
+  nothing is dropped and the best candidate is returned instead of "not found".
+* **Forecast:** `GET https://api.open-meteo.com/v1/forecast` with `current` +
+  `daily` blocks, `timezone=auto` (so `current.time` is the *place's* local time) and
+  `forecast_days=WEATHER_FORECAST_DAYS`.
+* **Units:** metric by default, imperial (`temperature_unit=fahrenheit`,
+  `wind_speed_unit=mph`, `precipitation_unit=inch`) for places whose
+  `country_code` is `US`, or when the message ends in `f` / `c`. The API's own
+  `current_units` are ignored: it reports `mp/h`, so the labels are set by the bot.
+* **WMO codes:** the API answers `weather_code` 0–99, never words. `describeWeather()`
+  maps them to a label plus one of eight icon families (`sun`, `partly`, `cloud`, `fog`,
+  `drizzle`, `rain`, `snow`, `storm`).
+* **Missing values are not zero:** `null` from the API must stay `null` (`Number(null)`
+  is `0`), or a missing rain chance renders as `0% rain` and a missing `weather_code`
+  as `Clear sky`. `num()` in this module is the strict read; days without a usable high
+  and low are dropped rather than drawn as `0°/0°`.
+* **Card:** `buildWeatherSvg()` draws 800×510 with plain shapes — no emoji glyphs, since
+  the client renders the SVG as an image and the emoji font is not guaranteed. Clear
+  nights get a moon with craters instead of the sun.
+* **Delivery:** one media DM (`image/svg+xml`) whose caption carries the same numbers as
+  text, so a client that refuses the image still shows the forecast; a failed upload
+  falls back to `sendTextReply`.
+* **Cache:** forecasts are kept for `WEATHER_CACHE_TTL_MS` (default 5 min, max 200
+  entries) keyed by rounded coordinates + units + days, so a user repeating themselves
+  does not re-bill Open-Meteo.
+
+---
+
 ## 🚦 In-Memory Anti-Spam Queue System (`src/queue.js`)
 
 `JobQueue` infrastructure for serializing heavy jobs (currently unused — all bots reply instantly):
@@ -322,16 +364,22 @@ In `src/index.js`:
    ```javascript
    const myBot = { ...generateKeypair(), name: "My Bot" };
    ```
-2. Include it in `announceBots()` for profile and beacon publishing.
-3. Add a poll listener in `pollLoop()`:
+2. Add it to the `BOTS` array — that array is the single source of truth for both
+   announcement and polling, so a bot missing from it is never announced and never
+   polled:
    ```javascript
-   const messages = await pollInbox(RELAYS, myBot, since);
-   for (const msg of messages) {
-     if (processedEventIds.has(msg.eventId)) continue;
-     recordEventId(msg.eventId);
-     handleMybotMessage({ text: msg.payload?.text, sender: msg.sender, relays: RELAYS, botKey: myBot });
-   }
+   {
+     key: { ...generateKeypair(), name: "My Bot" },
+     profile: mybotProfile,
+     beacon: mybotBeacon,
+     handler: handleMybotMessage,
+     label: "mybot",
+   },
    ```
+   Then add a block for it in `printBanner()`. The banner destructures the keys
+   positionally (`const [botCrypto, botTorrent, botBuddy, botWeather] = ...`) and
+   hand-writes each block, so a bot added to `BOTS` without one starts silently and is
+   easy to miss in the startup screen.
 
 ### 3. Test Your Bot Locally
 Run the test client to verify two-way communication:

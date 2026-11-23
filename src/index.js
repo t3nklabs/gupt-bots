@@ -8,6 +8,7 @@ import {
   bitcoinBuddyBeacon,
   startBitcoinBuddyLoop,
 } from "./bots/bitcoinbuddy.js";
+import { handleWeatherMessage, weatherProfile, weatherBeacon } from "./bots/weather.js";
 import {
   announceAll,
   formatPublishLine,
@@ -44,6 +45,13 @@ const BOTS = [
     handler: handleBitcoinBuddyMessage,
     label: "bitcoin-buddy",
   },
+  {
+    key: { ...generateKeypair(), name: "Weather Bot" },
+    profile: weatherProfile,
+    beacon: weatherBeacon,
+    handler: handleWeatherMessage,
+    label: "weather",
+  },
 ];
 
 const processedEventIds = new Set();
@@ -56,7 +64,7 @@ function recordEventId(id) {
 }
 
 function printBanner() {
-  const [botCrypto, botTorrent, botBuddy] = BOTS.map((b) => b.key);
+  const [botCrypto, botTorrent, botBuddy, botWeather] = BOTS.map((b) => b.key);
   console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                            GUPT TWO-WAY BOTS                                  ║
@@ -89,6 +97,14 @@ function printBanner() {
   Public Key:   ${botBuddy.pubkeyHex}
   Address:      ${botBuddy.address}
   Usage:        Send anything to subscribe; beams BTC price every 4h (25% chance)
+
+  ─────────────────────────────────────────────────────────────────────────────
+  🌦 [4] WEATHER BOT
+  ─────────────────────────────────────────────────────────────────────────────
+  Display Name: ${botWeather.name}
+  Public Key:   ${botWeather.pubkeyHex}
+  Address:      ${botWeather.address}
+  Usage:        Send a city, optionally with a country (e.g. "mumbai", "paris, france", "tokyo jp")
 
 ═══════════════════════════════════════════════════════════════════════════════
   To chat with any bot in Gupt:

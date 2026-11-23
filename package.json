@@ -1,12 +1,12 @@
 {
   "name": "gupt-bots",
   "version": "1.0.0",
-  "description": "Two-way bots for Gupt protocol: crypto price checker, torrent index, and bitcoin beams",
+  "description": "Two-way bots for Gupt protocol: crypto price checker, torrent index, bitcoin beams, and weather",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node test/queue.test.mjs && node test/expiry.test.mjs && node test/announce.test.mjs && node test/torrent.test.mjs && node test/bitcoinbuddy.test.mjs"
+    "test": "node test/queue.test.mjs && node test/expiry.test.mjs && node test/announce.test.mjs && node test/torrent.test.mjs && node test/bitcoinbuddy.test.mjs && node test/weather.test.mjs"
   },
   "dependencies": {
     "@noble/ciphers": "^0.4.0",
