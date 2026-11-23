@@ -36,6 +36,7 @@ Send a city and get current conditions plus a 3-day forecast — as a weather ca
 - **Usage:** `mumbai`, `paris, france`, `tokyo jp`, `new york` — a trailing country name or 2-letter code narrows the match.
 - **Ambiguity:** candidates are ranked by population, so `paris` is Paris, France while `paris us` is Paris, Texas.
 - **Units:** °C and km/h by default, °F and mph for places in the United States. Add `f` or `c` to override (e.g. `dubai f`).
+- **Next 2 hours:** a 15-minutely nowcast line — `🌧 Rain starts in ~45 min`, `☔ Rain stops in ~30 min`, or `☂ Dry for the next 2 hours` — because the daily `0% rain` line hides a shower that starts in 20 minutes. Widen or narrow it with `WEATHER_NOWCAST_STEPS`.
 - **Data:** [Open-Meteo](https://open-meteo.com) geocoding + forecast — no API key, no signup. Forecasts are cached for 5 minutes per location.
 - *Unknown place names get a hint to add the country rather than a silent guess.*
 
@@ -163,6 +164,7 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `BITCOIN_BUDDY_MESSAGE_DELAY_MS` | `200` | Pause between per-subscriber beam DMs (0–2000) |
 | `BITCOIN_BUDDY_BLOCKLIST_PATH` | `<cwd>/data/bitcoin-buddy-blocklist.json` | Where `stop` mutes are persisted |
 | `WEATHER_FORECAST_DAYS` | `3` | Days in the forecast strip (1–7) |
+| `WEATHER_NOWCAST_STEPS` | `8` | 15-minutely steps to look ahead for rain (2–24, i.e. 30 min–6 h) |
 | `WEATHER_CACHE_TTL_MS` | `300000` (5m) | How long a location's forecast stays cached; `0` disables |
 | `WEATHER_GEOCODE_BASE` | `https://geocoding-api.open-meteo.com` | Geocoder base URL (mirror or self-host) |
 | `WEATHER_FORECAST_BASE` | `https://api.open-meteo.com` | Forecast API base URL (mirror or self-host) |

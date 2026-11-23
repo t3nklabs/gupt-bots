@@ -263,8 +263,10 @@ calls and a formatter — the closest thing to a freebie in this repo, and the b
 template for "one query → one upstream API → one reply".
 
 * **Geocoding:** `GET https://geocoding-api.open-meteo.com/v1/search?name=<city>&count=5`.
-  Results are population-ranked, so `paris` is Paris, France (2.1M) rather than
-  Paris, Texas (24k) without any special casing.
+  Candidates are ranked by population, so `paris` is Paris, France (2.1M) rather than
+  Paris, Texas (24k) without any special casing; a populated place (`feature_code`
+  `PPL*`) outranks a same-named region or island, so `vancouver` is the city and not
+  Vancouver Island (870k > 662k on population alone).
 * **Country hints:** the API has no "city + country" field, and `name=mumbai in` returns
   **nothing**. `geocodePlace()` therefore tries the whole string first (so `new york` is
   never split), then peels off the last comma or space: a 2-letter token or alias
@@ -285,6 +287,14 @@ template for "one query → one upstream API → one reply".
   is `0`), or a missing rain chance renders as `0% rain` and a missing `weather_code`
   as `Clear sky`. `num()` in this module is the strict read; days without a usable high
   and low are dropped rather than drawn as `0°/0°`.
+* **Nowcast:** `minutely_15=precipitation` answers with the whole day starting at
+  `00:00` local, not from now, so `buildNowcast()` locates the current 15-minute slot by
+  timestamp before slicing `WEATHER_NOWCAST_STEPS` (default 8 = the next 2 hours).
+  `summarizeNowcast()` reports the first state change (`starts` / `stops`, with minutes)
+  or that nothing changes (`dry` / `continuing`), against a drizzle threshold of
+  0.1mm per step (0.004in imperial). The card's third stat becomes `NEXT 2 HOURS`; when
+  the API returns no minutely data the bot falls back to the plain precipitation stat
+  rather than inventing a nowcast.
 * **Card:** `buildWeatherSvg()` draws 800×510 with plain shapes — no emoji glyphs, since
   the client renders the SVG as an image and the emoji font is not guaranteed. Clear
   nights get a moon with craters instead of the sun.

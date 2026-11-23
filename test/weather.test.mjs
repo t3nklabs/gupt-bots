@@ -9,6 +9,7 @@ import {
   parseLocationQuery,
   placeLabel,
   splitLocation,
+  summarizeNowcast,
   weatherCacheSize,
 } from "../src/bots/weather.js";
 
@@ -48,6 +49,20 @@ const PLACES = {
   },
 };
 
+/** A full day of 15-minutely steps, wet only at the given indices */
+function minutelyDay(wetIndices = [], day = "2026-11-23") {
+  const time = [];
+  const precipitation = [];
+  for (let index = 0; index < 96; index += 1) {
+    const hour = String(Math.floor(index / 4)).padStart(2, "0");
+    const minute = String((index % 4) * 15).padStart(2, "0");
+    time.push(`${day}T${hour}:${minute}`);
+    precipitation.push(wetIndices.includes(index) ? 0.6 : 0);
+  }
+  return { time, precipitation };
+}
+
+// 10:45 is slot 43 of the day; rain at 11:15/11:30 means it starts in 30 min.
 const FORECAST_BODY = {
   latitude: 19.086,
   longitude: 72.853,
@@ -63,6 +78,7 @@ const FORECAST_BODY = {
     wind_speed_10m: 10.3,
     is_day: 1,
   },
+  minutely_15: minutelyDay([45, 46]),
   daily: {
     time: ["2026-11-23", "2026-11-24", "2026-11-25"],
     weather_code: [0, 61, 3],
@@ -196,6 +212,10 @@ async function runTests() {
   assert.equal(forecastFetch.calls[0].searchParams.get("forecast_days"), "3");
   assert.equal(forecastFetch.calls[0].searchParams.get("timezone"), "auto");
   assert.equal(forecastFetch.calls[0].searchParams.get("temperature_unit"), null);
+  assert.equal(forecastFetch.calls[0].searchParams.get("minutely_15"), "precipitation");
+  assert.equal(data.nowcast.kind, "starts");
+  assert.equal(data.nowcast.minutes, 30);
+  assert.equal(data.nowcast.window, "2 hours");
   assert.equal(weatherCacheSize(), 1);
 
   await fetchForecast(PLACES.mumbai, { units: "metric", fetchImpl: forecastFetch });
@@ -235,6 +255,7 @@ async function runTests() {
   const caption = formatWeatherCaption(data);
   assert.match(caption, /\*\*Mumbai, Maharashtra, India\*\*/);
   assert.match(caption, /Now: \*\*31\.6°C\*\* \(feels 32\.7°C\) — Clear sky/);
+  assert.match(caption, /🌧 Rain starts in ~30 min/);
   assert.match(caption, /💧 40% · 💨 10\.3 km\/h · ☔ 0 mm/);
   assert.match(caption, /Mon 34°\/24° · 0% rain · Clear sky/);
   assert.match(caption, /Tue 33°\/25° · 12% rain · Slight rain/);
@@ -304,6 +325,107 @@ async function runTests() {
     assert.ok(numeric >= 0 && numeric <= limit, `${attr}="${value}" falls outside the card`);
   }
   console.log("✅ Check 16: every coordinate stays inside the 800x510 canvas");
+
+  // 17. Nowcast summaries: one state change, minutes from now
+  const stepsFrom = (wet, from = 43, count = 8) => {
+    const day = minutelyDay(wet);
+    return day.time.slice(from, from + count).map((time, index) => ({
+      time,
+      precip: day.precipitation[from + index],
+    }));
+  };
+
+  const dryWindow = summarizeNowcast(stepsFrom([]));
+  assert.equal(dryWindow.kind, "dry");
+  assert.equal(dryWindow.minutes, null);
+  assert.equal(dryWindow.window, "2 hours");
+  assert.equal(dryWindow.text, "☂ Dry for the next 2 hours");
+
+  const stopsSoon = summarizeNowcast(stepsFrom([43, 44]));
+  assert.equal(stopsSoon.kind, "stops");
+  assert.equal(stopsSoon.minutes, 30);
+  assert.equal(stopsSoon.text, "☔ Rain stops in ~30 min");
+
+  const startsLater = summarizeNowcast(stepsFrom([46]));
+  assert.equal(startsLater.kind, "starts");
+  assert.equal(startsLater.minutes, 45);
+
+  const allWet = summarizeNowcast(stepsFrom([43, 44, 45, 46, 47, 48, 49, 50]));
+  assert.equal(allWet.kind, "continuing");
+  assert.equal(allWet.short, "Rain continues");
+
+  // Below the drizzle threshold is dry; the threshold follows the unit system.
+  assert.equal(summarizeNowcast([{ precip: 0.05 }, { precip: 0.05 }]).kind, "dry");
+  assert.equal(summarizeNowcast([{ precip: 0.5 }, { precip: 0.5 }]).kind, "continuing");
+  assert.equal(
+    summarizeNowcast([{ precip: 0.002 }, { precip: 0.002 }], { units: "imperial" }).kind,
+    "dry",
+    "0.002in is below the imperial drizzle threshold",
+  );
+  assert.equal(
+    summarizeNowcast([{ precip: 0.01 }, { precip: 0.01 }], { units: "imperial" }).kind,
+    "continuing",
+  );
+  assert.equal(summarizeNowcast([]), null);
+  assert.equal(summarizeNowcast(null), null);
+  console.log("✅ Check 17: nowcast reports starts/stops/dry/continuing with the right threshold");
+
+  // 18. The window is located by timestamp, not by array position
+  clearWeatherCache();
+  const lateBody = {
+    ...FORECAST_BODY,
+    current: { ...FORECAST_BODY.current, time: "2026-11-23T22:30" },
+    minutely_15: minutelyDay([91]),
+  };
+  const late = await fetchForecast(PLACES.mumbai, {
+    units: "metric",
+    fetchImpl: stubFetch(() => ({ body: lateBody })),
+  });
+  assert.equal(late.nowcast.kind, "starts", "22:30 is slot 90, so 22:45 rain is 15 min away");
+  assert.equal(late.nowcast.minutes, 15);
+  console.log("✅ Check 18: nowcast starts at the current 15-min slot, not at midnight");
+
+  // 19. No minutely data: the bot still answers, card keeps the old stat
+  clearWeatherCache();
+  const noMinutely = { ...FORECAST_BODY };
+  delete noMinutely.minutely_15;
+  const plain = await fetchForecast(PLACES.mumbai, {
+    units: "metric",
+    fetchImpl: stubFetch(() => ({ body: noMinutely })),
+  });
+  assert.equal(plain.nowcast, null);
+  assert.match(buildWeatherSvg(plain), /PRECIPITATION/);
+  assert.doesNotMatch(formatWeatherCaption(plain), /Rain starts|Dry for the next/);
+  assert.match(formatWeatherCaption(plain), /💧 40%/);
+  console.log("✅ Check 19: missing minutely data degrades to the plain precipitation stat");
+
+  // 20. A populated place beats a bigger-population region of the same name
+  const vancouverIsland = {
+    name: "Vancouver Island",
+    feature_code: "ISL",
+    latitude: 49.5,
+    longitude: -125.5,
+    country_code: "CA",
+    country: "Canada",
+    admin1: "British Columbia",
+    population: 870000,
+  };
+  const vancouverCity = {
+    name: "Vancouver",
+    feature_code: "PPLA2",
+    latitude: 49.28,
+    longitude: -123.12,
+    country_code: "CA",
+    country: "Canada",
+    admin1: "British Columbia",
+    population: 662248,
+  };
+  const vancouver = await geocodePlace(
+    "vancouver",
+    { fetchImpl: stubFetch(() => ({ body: { results: [vancouverIsland, vancouverCity] } })) },
+  );
+  assert.equal(vancouver.name, "Vancouver", "the city wins over the island");
+  console.log("✅ Check 20: a city outranks a larger region with the same name");
 
   console.log("\n🎉 All Weather Bot tests passed!");
 }

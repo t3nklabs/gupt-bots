@@ -9,6 +9,12 @@ import { sendMediaReply, sendTextReply } from "../relay.js";
 const GEOCODE_BASE = (process.env.WEATHER_GEOCODE_BASE || "https://geocoding-api.open-meteo.com").replace(/\/+$/, "");
 const FORECAST_BASE = (process.env.WEATHER_FORECAST_BASE || "https://api.open-meteo.com").replace(/\/+$/, "");
 const FORECAST_DAYS = clampInt(process.env.WEATHER_FORECAST_DAYS, 3, 1, 7);
+// 15-minutely steps to look ahead: 8 steps = the next 2 hours.
+const NOWCAST_STEPS = clampInt(process.env.WEATHER_NOWCAST_STEPS, 8, 2, 24);
+// Rain threshold per 15-min step. 0.1mm ≈ 0.4mm/h, i.e. light drizzle; below
+// that Open-Meteo reports 0.0 for dry intervals anyway.
+const NOWCAST_RAIN_MM = 0.1;
+const NOWCAST_RAIN_IN = 0.004;
 const CACHE_TTL_MS = clampInt(process.env.WEATHER_CACHE_TTL_MS, 5 * 60 * 1000, 0, 60 * 60 * 1000);
 const CACHE_MAX_ENTRIES = 200;
 const FETCH_TIMEOUT_MS = 8000;
@@ -220,11 +226,18 @@ async function searchPlaces(name, { countryCode } = {}, fetchImpl = fetch) {
   );
 }
 
-/** Highest-population candidate: "paris" → Paris, France (not Paris, Texas) */
+/**
+ * Best candidate: a populated place beats a region or an island (the geocoder
+ * returns Vancouver Island with a bigger population than Vancouver itself),
+ * and among cities the biggest population wins — "paris" → Paris, France.
+ */
 function bestMatch(places) {
-  return [...places].sort(
-    (a, b) => (Number(b.population) || 0) - (Number(a.population) || 0),
-  )[0];
+  const isCity = (place) => (/^PPL/.test(String(place?.feature_code || "")) ? 1 : 0);
+  return [...places].sort((a, b) => {
+    const cityDelta = isCity(b) - isCity(a);
+    if (cityDelta !== 0) return cityDelta;
+    return (Number(b.population) || 0) - (Number(a.population) || 0);
+  })[0];
 }
 
 /**
@@ -296,6 +309,75 @@ function unitLabels(units) {
     : { temp: "°C", wind: "km/h", precip: "mm" };
 }
 
+// ─── Nowcast (15-minutely precipitation) ───────────────────────────────────
+// The API returns the whole day from 00:00, not from now, so the window has to
+// be located by timestamp — index 0 is midnight.
+
+/** "2026-11-23T11:07" → "2026-11-23T11:00" (the 15-min slot we are inside) */
+function quarterFloor(isoLocal) {
+  const match = String(isoLocal || "").match(/^(\d{4}-\d{2}-\d{2}T\d{2}):(\d{2})/);
+  if (!match) return null;
+  const slot = Math.floor(Number(match[2]) / 15) * 15;
+  return `${match[1]}:${String(slot).padStart(2, "0")}`;
+}
+
+function windowLabel(steps) {
+  const minutes = steps * 15;
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (!rest) return `${hours} hour${hours === 1 ? "" : "s"}`;
+  return `${hours}h ${rest}m`;
+}
+
+/**
+ * First state change in the window. "starts"/"stops" carry how many minutes
+ * from now; "dry"/"continuing" mean nothing changes before the window ends.
+ */
+export function summarizeNowcast(steps, { units = "metric" } = {}) {
+  const list = Array.isArray(steps) ? steps : [];
+  if (!list.length) return null;
+
+  const threshold = units === "imperial" ? NOWCAST_RAIN_IN : NOWCAST_RAIN_MM;
+  const wet = list.map((step) => num(step?.precip) >= threshold);
+  const raining = wet[0];
+  const flip = wet.indexOf(!raining);
+  const minutes = flip > 0 ? flip * 15 : null;
+  const window = windowLabel(list.length);
+
+  if (raining) {
+    if (minutes === null) {
+      return { kind: "continuing", minutes: null, window, text: `☔ Rain continuing for the next ${window}`, short: "Rain continues" };
+    }
+    return { kind: "stops", minutes, window, text: `☔ Rain stops in ~${minutes} min`, short: `Stops in ${minutes}m` };
+  }
+  if (minutes === null) {
+    return { kind: "dry", minutes: null, window, text: `☂ Dry for the next ${window}`, short: "Dry" };
+  }
+  return { kind: "starts", minutes, window, text: `🌧 Rain starts in ~${minutes} min`, short: `Rain in ${minutes}m` };
+}
+
+/** Slice the nowcast window out of the raw minutely_15 block */
+function buildNowcast(body, { units }) {
+  const minutely = body?.minutely_15 || {};
+  const times = Array.isArray(minutely.time) ? minutely.time : [];
+  const amounts = Array.isArray(minutely.precipitation) ? minutely.precipitation : [];
+  const slot = quarterFloor(body?.current?.time);
+  if (!slot || !times.length) return null;
+
+  const start = times.findIndex((time) => String(time) >= slot);
+  if (start < 0) return null;
+
+  const window = [];
+  for (let index = start; index < Math.min(times.length, start + NOWCAST_STEPS); index += 1) {
+    const precip = num(amounts[index]);
+    if (!Number.isFinite(precip)) return null;
+    window.push({ time: times[index], precip });
+  }
+
+  return window.length >= 2 ? summarizeNowcast(window, { units }) : null;
+}
+
 /**
  * Current conditions plus a daily strip for `days` days, normalised into plain
  * numbers so the formatter and the SVG never see raw API shapes.
@@ -318,6 +400,7 @@ export async function fetchForecast(place, { units = "metric", days = FORECAST_D
   );
   url.searchParams.set("timezone", "auto");
   url.searchParams.set("forecast_days", String(days));
+  url.searchParams.set("minutely_15", "precipitation");
   if (units === "imperial") {
     url.searchParams.set("temperature_unit", "fahrenheit");
     url.searchParams.set("wind_speed_unit", "mph");
@@ -358,6 +441,7 @@ export async function fetchForecast(place, { units = "metric", days = FORECAST_D
     unitLabels: unitLabels(units),
     timezone: body.timezone || place.timezone || "",
     timezoneAbbreviation: body.timezone_abbreviation || "",
+    nowcast: buildNowcast(body, { units }),
     current: {
       time: String(body.current.time || "").slice(11, 16),
       temp: num(body.current.temperature_2m),
@@ -403,17 +487,21 @@ function dayName(date) {
 }
 
 export function formatWeatherCaption(data) {
-  const { place, current, daily, unitLabels: units } = data;
+  const { place, current, daily, nowcast, unitLabels: units } = data;
   const night = !current.isDay && (current.icon === "sun" || current.icon === "partly");
   const emoji = night ? "🌙" : ICON_EMOJI[current.icon] || "🌡️";
   const lines = [
     `${emoji} **${placeLabel(place)}**`,
     "",
     `Now: **${round1(current.temp)}${units.temp}** (feels ${round1(current.feels)}${units.temp}) — ${current.label}`,
+  ];
+
+  if (nowcast) lines.push(nowcast.text);
+  lines.push(
     `💧 ${Math.round(current.humidity)}% · 💨 ${round1(current.wind)} ${units.wind} · ☔ ${round1(current.precip)} ${units.precip}`,
     "",
     `**Next ${daily.length} day${daily.length === 1 ? "" : "s"}**`,
-  ];
+  );
 
   for (const day of daily) {
     const rain = day.rainChance === null ? "—" : `${Math.round(day.rainChance)}%`;
@@ -530,7 +618,7 @@ function statColumn(x, label, value) {
 
 /** Build a chat-friendly weather card SVG (800x510, dark theme). */
 export function buildWeatherSvg(data) {
-  const { place, current, daily, unitLabels: units } = data;
+  const { place, current, daily, nowcast, unitLabels: units } = data;
   const name = truncate(place?.name || "Unknown", 26);
   const region = truncate(regionLabel(place), 46);
   const nameSize = name.length > 18 ? 30 : 36;
@@ -588,7 +676,9 @@ export function buildWeatherSvg(data) {
     `<line x1="48" y1="356" x2="752" y2="356" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>\n` +
     statColumn(48, "HUMIDITY", `${Math.round(current.humidity)}%`) +
     statColumn(300, "WIND", `${round1(current.wind)} ${units.wind}`) +
-    statColumn(552, "PRECIPITATION", `${round1(current.precip)} ${units.precip}`) +
+    (nowcast
+      ? statColumn(552, `NEXT ${nowcast.window.toUpperCase()}`, nowcast.short)
+      : statColumn(552, "PRECIPITATION", `${round1(current.precip)} ${units.precip}`)) +
     `\n` +
     `<line x1="48" y1="436" x2="752" y2="436" stroke="rgba(255,255,255,0.10)" stroke-width="2"/>\n` +
     forecast +
