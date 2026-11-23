@@ -268,11 +268,15 @@ template for "one query → one upstream API → one reply".
   `PPL*`) outranks a same-named region or island, so `vancouver` is the city and not
   Vancouver Island (870k > 662k on population alone).
 * **Country hints:** the API has no "city + country" field, and `name=mumbai in` returns
-  **nothing**. `geocodePlace()` therefore tries the whole string first (so `new york` is
+  **nothing**. `resolvePlace()` therefore tries the whole string first (so `new york` is
   never split), then peels off the last comma or space: a 2-letter token or alias
   (`uk` → GB, `usa` → US, …) is sent as the API's `countryCode` filter, a country *name*
-  is matched against the returned `country` / `admin1` fields. A hint that matches
-  nothing is dropped and the best candidate is returned instead of "not found".
+  is matched against the returned `country` / `admin1` fields, and a trailing
+  conjunction is stripped first so `paris and france` uses `france` as the hint instead
+  of becoming two cities. A hint that matches nothing is dropped and the best candidate
+  is returned instead of "not found" — unless the message names several places
+  (`&`, `/`, `and`), in which case the first one that exists is answered with a note
+  saying so (`jammu & kathua` → Jammu + `Answered for Jammu only`).
 * **Forecast:** `GET https://api.open-meteo.com/v1/forecast` with `current` +
   `daily` blocks, `timezone=auto` (so `current.time` is the *place's* local time) and
   `forecast_days=WEATHER_FORECAST_DAYS`.
@@ -298,12 +302,18 @@ template for "one query → one upstream API → one reply".
 * **Card:** `buildWeatherSvg()` draws 800×510 with plain shapes — no emoji glyphs, since
   the client renders the SVG as an image and the emoji font is not guaranteed. Clear
   nights get a moon with craters instead of the sun.
-* **Delivery:** one media DM (`image/svg+xml`) whose caption carries the same numbers as
-  text, so a client that refuses the image still shows the forecast; a failed upload
-  falls back to `sendTextReply`.
 * **Cache:** forecasts are kept for `WEATHER_CACHE_TTL_MS` (default 5 min, max 200
   entries) keyed by rounded coordinates + units + days, so a user repeating themselves
   does not re-bill Open-Meteo.
+* **Outages say what broke:** every upstream read goes through `requestJson()` (one
+  retry, 400ms apart — a single reset socket never reaches the user) and failures carry
+  a `reason` (`rate limited by Open-Meteo`, `Open-Meteo returned HTTP 503`) or a mapped
+  network cause (`the lookup timed out`, `DNS lookup failed`, …), which is what the
+  chat reply shows instead of a bare "could not reach". 4xx other than 429 is final:
+  a rejected query is "no results", not an outage worth retrying.
+* **Delivery:** one media DM (`image/svg+xml`) whose caption carries the same numbers as
+  text, so a client that refuses the image still shows the forecast; a failed upload
+  falls back to `sendTextReply`.
 
 ---
 

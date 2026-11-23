@@ -8,6 +8,7 @@ import {
   geocodePlace,
   parseLocationQuery,
   placeLabel,
+  resolvePlace,
   splitLocation,
   summarizeNowcast,
   weatherCacheSize,
@@ -426,6 +427,91 @@ async function runTests() {
   );
   assert.equal(vancouver.name, "Vancouver", "the city wins over the island");
   console.log("✅ Check 20: a city outranks a larger region with the same name");
+
+  // 21. Two cities in one message answers the first one that exists
+  const jammu = { ...PLACES.mumbai, name: "Jammu", admin1: "Jammu and Kashmir", population: 500000 };
+  const kathua = { ...PLACES.mumbai, name: "Kathua", admin1: "Jammu and Kashmir", population: 250000 };
+  const twoCities = stubFetch((url) => {
+    const name = url.searchParams.get("name");
+    if (name === "jammu & kathua") return { body: { results: [] } };
+    if (name === "jammu &") return { body: { results: [] } };
+    if (name === "jammu") return { body: { results: [jammu] } };
+    if (name === "kathua") return { body: { results: [kathua] } };
+    return { body: { results: [] } };
+  });
+  const both = await resolvePlace("jammu & kathua", { fetchImpl: twoCities });
+  assert.equal(both.place.name, "Jammu", "answers the first city that exists");
+  assert.match(both.note, /Jammu only/);
+  console.log("✅ Check 21: 'city & city' answers the first known city with a note");
+
+  // 22. Local text that names a region matches on the region
+  const jammuOnly = stubFetch((url) => {
+    const name = url.searchParams.get("name");
+    if (name === "jammu and kashmir") return { body: { results: [] } };
+    if (name === "jammu and") return { body: { results: [] } };
+    if (name === "jammu") return { body: { results: [jammu] } };
+    if (name === "kashmir") return { body: { results: [jammu] } };
+    return { body: { results: [] } };
+  });
+  const regionQuery = await resolvePlace("jammu and kashmir", { fetchImpl: jammuOnly });
+  assert.equal(regionQuery.place.name, "Jammu", "a region phrase resolves to its city");
+  assert.match(regionQuery.note, /Jammu only/);
+  console.log("✅ Check 22: 'jammu and kashmir' degrades to Jammu with a note");
+
+  // 22b. A country joined with "and" is a hint, not a second city
+  const parisOnly = stubFetch((url) => {
+    const name = url.searchParams.get("name");
+    if (name === "paris and france") return { body: { results: [] } };
+    if (name === "paris") {
+      return { body: { results: [{ ...PLACES.parisUs, country: "France", country_code: "FR", admin1: "Île-de-France" }] } };
+    }
+    return { body: { results: [] } };
+  });
+  const parisAnd = await resolvePlace("paris and france", { fetchImpl: parisOnly });
+  assert.equal(parisAnd.place.country_code, "FR");
+  assert.equal(parisAnd.note, null, "no 'one city' note when there was only one city");
+  console.log("✅ Check 22b: 'paris and france' strips the conjunction and uses the hint");
+
+  // 23. Unknown cities still return null, but the plain names still work
+  const unknown = await resolvePlace("gotham city", { fetchImpl: stubFetch(() => null) });
+  assert.equal(unknown.place, null);
+  const hot = await geocodePlace("jammu", {
+    fetchImpl: stubFetch(() => ({ body: { results: [jammu] } })),
+  });
+  assert.equal(hot.name, "Jammu");
+  const hotKathua = await geocodePlace("kathua", {
+    fetchImpl: stubFetch(() => ({ body: { results: [kathua] } })),
+  });
+  assert.equal(hotKathua.name, "Kathua");
+  console.log("✅ Check 23: unknown names return null, jammu/kathua resolve directly");
+
+  // 24. One retry: a dropped first attempt succeeds on the second
+  let requestAttempts = 0;
+  const flaky = async () => {
+    requestAttempts += 1;
+    if (requestAttempts === 1) {
+      const err = new Error("fetch failed");
+      err.cause = { code: "ECONNRESET" };
+      throw err;
+    }
+    return { ok: true, json: async () => ({ results: [jammu] }) };
+  };
+  const retried = await geocodePlace("jammu", { fetchImpl: flaky });
+  assert.equal(retried.name, "Jammu");
+  assert.equal(requestAttempts, 2, "the first failure is retried once");
+  console.log("✅ Check 24: a single flaky request is retried instead of shown as an outage");
+
+  // 25. A repeated failure rejects, and the reason names the fault
+  let refusalAttempts = 0;
+  const refusing = async () => {
+    refusalAttempts += 1;
+    const err = new Error("fetch failed");
+    err.cause = { code: "ENOTFOUND" };
+    throw err;
+  };
+  await assert.rejects(() => geocodePlace("jammu", { fetchImpl: refusing }), /fetch failed/);
+  assert.equal(refusalAttempts, 2, "both attempts are used before rejecting");
+  console.log("✅ Check 25: persistent DNS failure rejects after both attempts");
 
   console.log("\n🎉 All Weather Bot tests passed!");
 }

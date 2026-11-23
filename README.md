@@ -38,7 +38,7 @@ Send a city and get current conditions plus a 3-day forecast — as a weather ca
 - **Units:** °C and km/h by default, °F and mph for places in the United States. Add `f` or `c` to override (e.g. `dubai f`).
 - **Next 2 hours:** a 15-minutely nowcast line — `🌧 Rain starts in ~45 min`, `☔ Rain stops in ~30 min`, or `☂ Dry for the next 2 hours` — because the daily `0% rain` line hides a shower that starts in 20 minutes. Widen or narrow it with `WEATHER_NOWCAST_STEPS`.
 - **Data:** [Open-Meteo](https://open-meteo.com) geocoding + forecast — no API key, no signup. Forecasts are cached for 5 minutes per location.
-- *Unknown place names get a hint to add the country rather than a silent guess.*
+- *Unknown place names get a hint to add the country rather than a silent guess. One city per message — `jammu & kathua` answers Jammu and says so.*
 
 ---
 

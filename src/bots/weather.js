@@ -209,6 +209,64 @@ function matchesCountry(place, tail) {
 }
 
 // ─── Upstream calls ────────────────────────────────────────────────────────
+const FETCH_ATTEMPTS = 2;
+const RETRY_DELAY_MS = 400;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Short reason a request failed, for the chat reply. Without this the user (and
+ * whoever they report the problem to) only sees "could not reach", which hides
+ * whether it was a timeout, DNS, a reset socket or a rate limit.
+ */
+function describeFetchError(err) {
+  const code = String(err?.cause?.code || err?.code || "");
+  if (err?.name === "TimeoutError" || code === "UND_ERR_CONNECT_TIMEOUT" || code === "ETIMEDOUT") {
+    return "the lookup timed out";
+  }
+  if (code === "ENOTFOUND" || code === "EAI_AGAIN") return "DNS lookup failed";
+  if (code === "ECONNRESET" || code === "EPIPE") return "the connection was reset";
+  if (code === "ECONNREFUSED") return "the connection was refused";
+  if (code.startsWith("CERT_") || code.startsWith("UNABLE_TO_") || code.startsWith("SELF_SIGNED")) {
+    return "the TLS certificate was rejected";
+  }
+  return "network error";
+}
+
+function upstreamError(status) {
+  const err = new Error(`Weather service returned ${status}`);
+  err.status = status;
+  err.reason = status === 429 ? "rate limited by Open-Meteo" : `Open-Meteo returned HTTP ${status}`;
+  return err;
+}
+
+/**
+ * GET a JSON endpoint with one retry. A dead keep-alive socket (Cloudflare
+ * closing an idle connection is the common one) fails the first attempt with
+ * ECONNRESET and succeeds immediately on the second, so a single flake should
+ * never reach the user. 4xx other than 429 is final: retrying a rejected query
+ * cannot help.
+ */
+async function requestJson(url, { fetchImpl = fetch, timeoutMs = FETCH_TIMEOUT_MS } = {}) {
+  let lastError;
+  for (let attempt = 1; attempt <= FETCH_ATTEMPTS; attempt += 1) {
+    try {
+      const res = await fetchImpl(url, { signal: AbortSignal.timeout(timeoutMs) });
+      if (res.ok) return await res.json().catch(() => ({}));
+      const err = upstreamError(res.status);
+      if (res.status !== 429 && res.status < 500) throw Object.assign(err, { final: true });
+      lastError = err;
+    } catch (err) {
+      if (err?.final) throw err;
+      lastError = err;
+    }
+    if (attempt < FETCH_ATTEMPTS) await sleep(RETRY_DELAY_MS);
+  }
+  throw lastError;
+}
+
 async function searchPlaces(name, { countryCode } = {}, fetchImpl = fetch) {
   const url = new URL(`${GEOCODE_BASE}/v1/search`);
   url.searchParams.set("name", name);
@@ -217,10 +275,16 @@ async function searchPlaces(name, { countryCode } = {}, fetchImpl = fetch) {
   url.searchParams.set("format", "json");
   if (countryCode) url.searchParams.set("countryCode", countryCode);
 
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) return [];
-  const data = await res.json().catch(() => ({}));
-  const results = Array.isArray(data?.results) ? data.results : [];
+  let body;
+  try {
+    body = await requestJson(url, { fetchImpl });
+  } catch (err) {
+    // A rejected query ("???" or a stray emoji) is "no results", not an outage.
+    if (err?.status >= 400 && err.status < 500 && err.status !== 429) return [];
+    throw err;
+  }
+
+  const results = Array.isArray(body?.results) ? body.results : [];
   return results.filter(
     (place) => Number.isFinite(place?.latitude) && Number.isFinite(place?.longitude),
   );
@@ -240,35 +304,70 @@ function bestMatch(places) {
   })[0];
 }
 
+/** "jammu & kathua", "delhi/mumbai", "pune and nashik" → the parts to try */
+function splitAlternatives(query) {
+  return String(query)
+    .split(/\s*(?:[&|/+]|\band\b)\s*/i)
+    .map((part) => part.trim())
+    .filter((part) => part.length >= 2);
+}
+
 /**
  * Resolve free text to one place. Tries the whole string first ("new york"),
  * then peels off a trailing country hint: an ISO code is sent to the API as a
  * filter, a country name is matched against the results. A hint that matches
- * nothing is dropped rather than turning into "not found".
+ * nothing is dropped rather than turning into "not found". Finally, a message
+ * naming several places answers the first one that exists, with a note.
  */
-export async function geocodePlace(raw, { fetchImpl = fetch } = {}) {
+export async function resolvePlace(raw, { fetchImpl = fetch } = {}) {
   const query = String(raw || "").trim();
-  if (!query) return null;
+  if (!query) return { place: null, note: null };
 
   const direct = await searchPlaces(query, {}, fetchImpl);
-  if (direct.length) return bestMatch(direct);
+  if (direct.length) return { place: bestMatch(direct), note: null };
 
   const { head, tail } = splitLocation(query);
-  if (!tail || !head) return null;
+  // "paris and france": the head keeps the conjunction once the tail is cut
+  // off, so strip it before searching ("paris and" is not a place).
+  const cleanHead = head.replace(/\s*(?:[&|/+]\s*|\s+and\s*)$/i, "").trim();
+  if (tail && cleanHead) {
+    const iso = countryCodeFor(tail);
+    if (iso) {
+      const filtered = await searchPlaces(cleanHead, { countryCode: iso }, fetchImpl);
+      if (filtered.length) return { place: bestMatch(filtered), note: null };
+    }
 
-  const iso = countryCodeFor(tail);
-  if (iso) {
-    const filtered = await searchPlaces(head, { countryCode: iso }, fetchImpl);
-    if (filtered.length) return bestMatch(filtered);
+    const places = await searchPlaces(cleanHead, {}, fetchImpl);
+    if (places.length) {
+      if (iso) return { place: bestMatch(places), note: null };
+      const named = places.filter((place) => matchesCountry(place, tail));
+      if (named.length) return { place: bestMatch(named), note: null };
+      // The tail matched nothing. With a single place in the message this is
+      // just a stray word ("mumbai xyz") and the head wins silently; with a
+      // separator ("jammu & kathua") it is probably a second place, so fall
+      // through to the alternatives below instead of answering silently.
+      if (splitAlternatives(query).length < 2) return { place: bestMatch(places), note: null };
+    }
   }
 
-  const places = await searchPlaces(head, {}, fetchImpl);
-  if (!places.length) return null;
-  if (!iso) {
-    const named = places.filter((place) => matchesCountry(place, tail));
-    if (named.length) return bestMatch(named);
+  const alternatives = splitAlternatives(query);
+  if (alternatives.length > 1) {
+    for (const alternative of alternatives) {
+      const found = await searchPlaces(alternative, {}, fetchImpl);
+      if (found.length) {
+        const place = bestMatch(found);
+        return { place, note: `Answered for ${place.name} only — send one city per message.` };
+      }
+    }
   }
-  return bestMatch(places);
+
+  return { place: null, note: null };
+}
+
+/** Convenience wrapper for callers that only need the place */
+export async function geocodePlace(raw, options = {}) {
+  const { place } = await resolvePlace(raw, options);
+  return place || null;
 }
 
 // ─── Forecast cache ────────────────────────────────────────────────────────
@@ -407,9 +506,7 @@ export async function fetchForecast(place, { units = "metric", days = FORECAST_D
     url.searchParams.set("precipitation_unit", "inch");
   }
 
-  const res = await fetchImpl(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
-  if (!res.ok) throw new Error(`Weather service returned ${res.status}`);
-  const body = await res.json().catch(() => null);
+  const body = await requestJson(url, { fetchImpl });
   if (!Number.isFinite(num(body?.current?.temperature_2m))) {
     throw new Error("Weather service returned no current conditions");
   }
@@ -697,7 +794,8 @@ const HELP_TEXT =
   `• \`tokyo jp\`\n` +
   `• \`new york\`\n\n` +
   `Country names and 2-letter codes both work. Add \`f\` for °F or \`c\` for °C ` +
-  `(places in the United States default to °F).`;
+  `(places in the United States default to °F).\n\n` +
+  `One city per message — \`jammu & kathua\` answers Jammu only.`;
 
 export async function handleWeatherMessage({ text, sender, relays, botKey, ttlSeconds }) {
   const raw = String(text || "").trim();
@@ -715,28 +813,34 @@ export async function handleWeatherMessage({ text, sender, relays, botKey, ttlSe
 
   console.log(`[weather] Looking up "${parsed.query}" (requested by ${sender.slice(0, 12)})`);
 
-  let place;
+  let resolution;
   try {
-    place = await geocodePlace(parsed.query);
+    resolution = await resolvePlace(parsed.query);
   } catch (err) {
     console.error(`[weather] Geocoding failed:`, err?.message || err);
     await sendTextReply(
       relays,
       botKey,
       sender,
-      `⚠️ Could not reach the weather service. Please try again in a moment.`,
+      `⚠️ ${err?.reason || `Could not fetch "${parsed.query}" (${describeFetchError(err)})`}. Please try again in a moment.`,
       { source: "weather-bot", ttlSeconds },
     );
     return;
   }
 
+  const place = resolution.place;
+  const lookupNote = resolution.note;
+
   if (!place) {
+    const askedForSeveral = splitAlternatives(parsed.query).length > 1;
     await sendTextReply(
       relays,
       botKey,
       sender,
       `❌ Could not find **"${parsed.query}"**.\n\n` +
-        `Try adding the country: \`paris, france\` or \`tokyo jp\`.`,
+        (askedForSeveral
+          ? `I can look up one city at a time — try \`jammu\` or \`kathua\` on its own.\n\n`
+          : `Try adding the country: \`paris, france\` or \`tokyo jp\`. Send one city per message.`),
       { source: "weather-bot", ttlSeconds },
     );
     return;
@@ -753,13 +857,13 @@ export async function handleWeatherMessage({ text, sender, relays, botKey, ttlSe
       relays,
       botKey,
       sender,
-      `⚠️ Could not fetch the forecast for **${placeLabel(place)}**. Please try again in a moment.`,
+      `⚠️ ${err?.reason || `Could not fetch the forecast for **${placeLabel(place)}** (${describeFetchError(err)})`}. Please try again in a moment.`,
       { source: "weather-bot", ttlSeconds },
     );
     return;
   }
 
-  const caption = formatWeatherCaption(data);
+  const caption = (lookupNote ? `${lookupNote}\n\n` : "") + formatWeatherCaption(data);
 
   // Send the card as an SVG image (renders inline in chat), with the text
   // details as the caption. Fall back to plain text if the upload fails.
