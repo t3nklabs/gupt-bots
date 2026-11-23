@@ -1,1 +1,1 @@
-podman build -t gupt-bots . && podman run -d --name gupt-bots --restart unless-stopped --network host -e GUPT_RELAY=http://localhost:3232 gupt-bots
+podman build -t gupt-bots . && podman rm -f gupt-bots 2>/dev/null; podman run -d --name gupt-bots --restart unless-stopped --network host -e GUPT_RELAY=http://localhost:3232 gupt-bots
