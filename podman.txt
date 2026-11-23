@@ -1,1 +1,1 @@
-podman build -t gupt-bots . && podman run --rm -it --network host -e GUPT_RELAY=http://localhost:3232 gupt-bots
+podman build -t gupt-bots . && podman run --rm -d --network host -e GUPT_RELAY=http://localhost:3232 gupt-bots
