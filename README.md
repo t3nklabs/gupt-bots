@@ -61,15 +61,6 @@ To keep the bots spam-free and protect against network/disk exhaustion:
 
 ### Using Docker / Podman
 
-Prebuilt image (published to GHCR by the manual **Publish Docker image** workflow):
-
-```bash
-docker pull ghcr.io/t3nklabs/gupt-bots:latest
-docker run --rm -it ghcr.io/t3nklabs/gupt-bots:latest
-```
-
-Build it yourself:
-
 ```bash
 # Build the Docker image
 podman build -t gupt-bots .
