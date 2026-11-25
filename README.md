@@ -42,14 +42,27 @@ Send a city and get current conditions plus a 3-day forecast — as a weather ca
 
 ---
 
+### 5. **Currency & Unit Converter** 💱
+
+Convert currencies with keyless [Frankfurter](https://frankfurter.dev) reference rates, or convert common units entirely offline.
+
+- **Currency examples:** `100 USD to EUR`, `2,500 INR in USD`, `USD to GBP`, `EUR/USD`, `/convert 19.99 EUR USD`
+- **Unit examples:** `10 km to miles`, `180 lb to kg`, `32 F to C`, `-40C to F`, `1 gallon to litres`, `100 mph to km/h`, `2 acres to m2`, `90 min to hours`, `1 GiB to MB`
+- **Supported categories:** length, mass, temperature, volume, area, speed, time, and digital data. Send `units` for the full list.
+- **Rates:** one-hour cache, one retry for transient failures, dated response provenance, and concurrent-request deduplication. Same-currency and unit conversions make no upstream request.
+- **Accuracy:** Frankfurter publishes daily reference rates, not live market quotes. Temperatures below absolute zero are rejected.
+- **Data units:** `KB/MB/GB/TB/PB` are decimal; `KiB/MiB/GiB/TiB` are binary. Unqualified gallons, quarts, pints, cups, fluid ounces, tablespoons, and teaspoons are US customary units.
+
+---
+
 ## 🚦 In-Memory Anti-Spam Job Queue (`src/queue.js`)
 
-Available infrastructure for serializing heavy jobs (currently unused — all four bots reply instantly with no enqueue):
+Available infrastructure for serializing heavy jobs (currently unused — all five bots reply instantly with no enqueue):
 * **Single Concurrency (1 task at a time):** Heavy media downloads process one at a time.
 * **Queue Notifications:** If a job is already in progress, new requests are queued, and the user is told their position (e.g. `⏳ You are at position #1 in line`).
 * **Auto-Start:** When preceding tasks complete, the next job begins automatically and informs the user.
 * **Per-User Limits:** Each user can have only 1 active or queued download at a time. Repeat requests while one is pending are rejected.
-* **Instant Replies:** Crypto, torrent, buddy and weather all answer instantly with no enqueue.
+* **Instant Replies:** Crypto, torrent, buddy, weather and converter all answer instantly with no enqueue.
 
 ---
 
@@ -110,7 +123,7 @@ Each boot (and every `BEACON_INTERVAL_MS`) publishes every bot's profile and dir
 [init] ✓ profile Torrent Bot: 1/1 relays
 [init] ✓ beacon torrent-bot: 1/1 relays
 [init] Directory check (Gupt /bots only shows beacons from the last hour):
-[init]   https://1.rabta.space: 4/4 listed
+[init]   https://1.rabta.space: 5/5 listed
 [init] ✓ Every bot is listed in /bots on the relays that answered.
 ```
 
@@ -168,3 +181,5 @@ Environment variables (configurable in `docker-compose.yml` or `-e`):
 | `WEATHER_CACHE_TTL_MS` | `300000` (5m) | How long a location's forecast stays cached; `0` disables |
 | `WEATHER_GEOCODE_BASE` | `https://geocoding-api.open-meteo.com` | Geocoder base URL (mirror or self-host) |
 | `WEATHER_FORECAST_BASE` | `https://api.open-meteo.com` | Forecast API base URL (mirror or self-host) |
+| `CONVERTER_API_BASE` | `https://api.frankfurter.dev` | Frankfurter API base URL (mirror or self-host) |
+| `CONVERTER_CACHE_TTL_MS` | `3600000` (1h) | How long exchange rates stay cached (0–24h; `0` disables) |

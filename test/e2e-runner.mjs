@@ -28,12 +28,13 @@ async function waitForReply(user, botPubkey, timeoutMs = 25000) {
 
 async function run() {
   console.log("=== Starting Gupt Bots Container for E2E Test ===");
-  const child = spawn("podman", ["run", "--rm", "gupt-bots:latest"], {
+  const child = spawn("podman", ["run", "--rm", "--network", "host", "gupt-bots:latest"], {
     stdio: ["ignore", "pipe", "pipe"],
   });
 
   let botCryptoPub = null;
   let botTorrentPub = null;
+  let botConverterPub = null;
 
   child.stdout.on("data", (chunk) => {
     const text = chunk.toString();
@@ -47,6 +48,10 @@ async function run() {
     if (m2 && !botTorrentPub) {
       botTorrentPub = m2[1];
     }
+    const m3 = text.match(/\[5\] CURRENCY & UNIT CONVERTER[\s\S]*?Public Key:\s+([0-9a-f]{64})/i);
+    if (m3 && !botConverterPub) {
+      botConverterPub = m3[1];
+    }
   });
 
   child.stderr.on("data", (chunk) => {
@@ -55,17 +60,18 @@ async function run() {
 
   console.log("Waiting for bots to announce keys...");
   const startWait = Date.now();
-  while ((!botCryptoPub || !botTorrentPub) && Date.now() - startWait < 20000) {
+  while ((!botCryptoPub || !botTorrentPub || !botConverterPub) && Date.now() - startWait < 20000) {
     await sleep(500);
   }
 
-  if (!botCryptoPub || !botTorrentPub) {
+  if (!botCryptoPub || !botTorrentPub || !botConverterPub) {
     child.kill("SIGINT");
     throw new Error("Failed to detect bot public keys from container output.");
   }
 
   console.log(`\nDetected Crypto Bot: ${botCryptoPub}`);
   console.log(`Detected Torrent Bot: ${botTorrentPub}`);
+  console.log(`Detected Converter Bot: ${botConverterPub}`);
 
   // Give bots 2 seconds to finish publishing profiles & beacons
   await sleep(2000);
@@ -114,6 +120,37 @@ async function run() {
     throw new Error("Test 3 Failed: Response did not contain expected help text");
   }
   console.log("✅ TEST 3 PASSED!");
+
+  // TEST 4: Converter Bot with an offline unit conversion
+  console.log("\n--- TEST 4: Testing Converter Bot with '10 km to miles' ---");
+  await sendTextReply(RELAYS, testUser, botConverterPub, "10 km to miles", { source: "e2e-tester" });
+  console.log("Sent '10 km to miles' to Converter Bot. Waiting for response...");
+  const reply4 = await waitForReply(testUser, botConverterPub, 20000);
+  if (!reply4) {
+    throw new Error("Test 4 Failed: No reply received from Converter Bot for unit conversion");
+  }
+  console.log("Received Reply:\n" + reply4.payload?.text);
+  if (!reply4.payload?.text?.includes("6.21371192 miles")) {
+    throw new Error("Test 4 Failed: Response did not contain the expected unit conversion");
+  }
+  console.log("✅ TEST 4 PASSED!");
+
+  // TEST 5: Converter Bot with a live Frankfurter reference rate
+  console.log("\n--- TEST 5: Testing Converter Bot with '100 USD to EUR' ---");
+  await sendTextReply(RELAYS, testUser, botConverterPub, "100 USD to EUR", { source: "e2e-tester" });
+  console.log("Sent '100 USD to EUR' to Converter Bot. Waiting for response...");
+  const reply5 = await waitForReply(testUser, botConverterPub, 20000);
+  if (!reply5) {
+    throw new Error("Test 5 Failed: No reply received from Converter Bot for currency conversion");
+  }
+  console.log("Received Reply:\n" + reply5.payload?.text);
+  if (!reply5.payload?.text?.includes("USD =") || !reply5.payload?.text?.includes("EUR")) {
+    throw new Error("Test 5 Failed: Response did not contain the expected currency conversion");
+  }
+  if (!reply5.payload?.text?.includes("Frankfurter")) {
+    throw new Error("Test 5 Failed: Response did not identify the reference-rate source");
+  }
+  console.log("✅ TEST 5 PASSED!");
 
   console.log("\nAll E2E tests passed! Shutting down container...");
   child.kill("SIGINT");

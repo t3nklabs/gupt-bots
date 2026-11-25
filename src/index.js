@@ -9,6 +9,7 @@ import {
   startBitcoinBuddyLoop,
 } from "./bots/bitcoinbuddy.js";
 import { handleWeatherMessage, weatherProfile, weatherBeacon } from "./bots/weather.js";
+import { handleConverterMessage, converterProfile, converterBeacon } from "./bots/converter.js";
 import {
   announceAll,
   formatPublishLine,
@@ -52,6 +53,13 @@ const BOTS = [
     handler: handleWeatherMessage,
     label: "weather",
   },
+  {
+    key: { ...generateKeypair(), name: "Currency & Unit Converter" },
+    profile: converterProfile,
+    beacon: converterBeacon,
+    handler: handleConverterMessage,
+    label: "converter",
+  },
 ];
 
 const processedEventIds = new Set();
@@ -64,7 +72,7 @@ function recordEventId(id) {
 }
 
 function printBanner() {
-  const [botCrypto, botTorrent, botBuddy, botWeather] = BOTS.map((b) => b.key);
+  const [botCrypto, botTorrent, botBuddy, botWeather, botConverter] = BOTS.map((b) => b.key);
   console.log(`
 ╔═══════════════════════════════════════════════════════════════════════════════╗
 ║                            GUPT TWO-WAY BOTS                                  ║
@@ -105,6 +113,14 @@ function printBanner() {
   Public Key:   ${botWeather.pubkeyHex}
   Address:      ${botWeather.address}
   Usage:        Send a city, optionally with a country (e.g. "mumbai", "paris, france", "tokyo jp")
+
+  ─────────────────────────────────────────────────────────────────────────────
+  💱 [5] CURRENCY & UNIT CONVERTER
+  ─────────────────────────────────────────────────────────────────────────────
+  Display Name: ${botConverter.name}
+  Public Key:   ${botConverter.pubkeyHex}
+  Address:      ${botConverter.address}
+  Usage:        Send "100 USD to EUR", "10 km to miles", or "32 F to C"
 
 ═══════════════════════════════════════════════════════════════════════════════
   To chat with any bot in Gupt:
