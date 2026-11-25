@@ -45,7 +45,7 @@ export class ConversionError extends Error {
 // Grouped commas are accepted, but malformed values such as "1,00" are not.
 const AMOUNT_PATTERN = String.raw`[+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?|\.\d+)`;
 // Up to three words permits aliases such as "square feet" and "us fluid ounce".
-const UNIT_TOKEN_PATTERN = String.raw`[a-z][a-z0-9°²/_.-]*(?:\s+[a-z][a-z0-9°²/_.-]*){0,2}`;
+const UNIT_TOKEN_PATTERN = String.raw`[a-zµμ][a-z0-9°²/_.µμ-]*(?:\s+[a-zµμ][a-z0-9°²/_.µμ-]*){0,2}`;
 
 function normalizeQuery(value) {
   return String(value || "")
@@ -94,8 +94,15 @@ function matchShape(query, { allowPreposition = true } = {}) {
   if (match) return makeShape(match[1], match[2], match[3]);
 
   if (allowPreposition) {
-    const prepositional = query.replace(/\s+(?:in|into|as)\s+/gi, " to ");
-    if (prepositional !== query) return matchShape(prepositional, { allowPreposition: false });
+    // Try each preposition from right to left. A global rewrite corrupts valid
+    // inch expressions such as "10 in in cm" by replacing the unit itself.
+    const prepositions = [...query.matchAll(/\s+(?:in|into|as)(?=\s)/gi)];
+    for (let index = prepositions.length - 1; index >= 0; index -= 1) {
+      const match = prepositions[index];
+      const candidate = query.slice(0, match.index) + " to " + query.slice(match.index + match[0].length);
+      const parsed = matchShape(candidate, { allowPreposition: false });
+      if (parsed) return parsed;
+    }
   }
 
   const pairPattern = new RegExp(
@@ -193,7 +200,7 @@ addUnit("length", ["m", "meter", "meters", "metre", "metres"], 1, "meter", "mete
 addUnit("length", ["km", "kilometer", "kilometers", "kilometre", "kilometres"], 1000, "kilometer", "kilometers", "km");
 addUnit("length", ["cm", "centimeter", "centimeters", "centimetre", "centimetres"], 0.01, "centimeter", "centimeters", "cm");
 addUnit("length", ["mm", "millimeter", "millimeters", "millimetre", "millimetres"], 0.001, "millimeter", "millimeters", "mm");
-addUnit("length", ["um", "micrometer", "micrometers", "micrometre", "micrometres"], 1e-6, "micrometer", "micrometers", "µm");
+addUnit("length", ["um", "µm", "μm", "micrometer", "micrometers", "micrometre", "micrometres"], 1e-6, "micrometer", "micrometers", "µm");
 addUnit("length", ["nm", "nanometer", "nanometers", "nanometre", "nanometres"], 1e-9, "nanometer", "nanometers", "nm");
 addUnit("length", ["in", "inch", "inches"], 0.0254, "inch", "inches", "in");
 addUnit("length", ["ft", "foot", "feet"], 0.3048, "foot", "feet", "ft");
@@ -381,11 +388,17 @@ async function requestRate(url, from, to, { fetchImpl, timeoutMs }) {
             final: true,
           });
         }
-        const rate = Number(body?.rate);
+        const rate = body?.rate;
         const base = String(body?.base || "").toUpperCase();
         const quote = String(body?.quote || "").toUpperCase();
         const date = /^\d{4}-\d{2}-\d{2}$/.test(String(body?.date || "")) ? body.date : null;
-        if (!Number.isFinite(rate) || rate <= 0 || (base && base !== from) || (quote && quote !== to)) {
+        if (
+          typeof rate !== "number" ||
+          !Number.isFinite(rate) ||
+          rate <= 0 ||
+          base !== from ||
+          quote !== to
+        ) {
           throw new ConversionError("Invalid exchange-rate response", {
             userMessage: "The exchange-rate service returned an invalid rate. Please try again.",
             reason: "Frankfurter returned an invalid rate payload",

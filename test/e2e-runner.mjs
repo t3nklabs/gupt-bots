@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { generateKeypair } from "../src/crypto.js";
+import { fetchBeacons, listedBots } from "../src/announce.js";
 import { parseRelays, sendTextReply, pollInbox } from "../src/relay.js";
 
 const RELAYS = parseRelays(process.env.GUPT_RELAY);
@@ -24,6 +25,22 @@ async function waitForReply(user, botPubkey, timeoutMs = 25000) {
     await sleep(1500);
   }
   return null;
+}
+
+async function waitForDirectoryListing(botPubkey, timeoutMs = 20000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    for (const relay of RELAYS) {
+      try {
+        const events = await fetchBeacons(relay, { limit: 100, timeoutMs: 5000 });
+        if (listedBots(events).has(botPubkey)) return true;
+      } catch {
+        // Relay reads are eventually consistent; retry until the deadline.
+      }
+    }
+    await sleep(1000);
+  }
+  return false;
 }
 
 async function run() {
@@ -75,6 +92,12 @@ async function run() {
 
   // Give bots 2 seconds to finish publishing profiles & beacons
   await sleep(2000);
+
+  if (!(await waitForDirectoryListing(botConverterPub))) {
+    child.kill("SIGINT");
+    throw new Error("Converter Bot beacon was not listed in the Gupt /bots directory.");
+  }
+  console.log("✅ Converter Bot beacon is listed in /bots");
 
   const testUser = generateKeypair();
   console.log(`\nTest User Pubkey: ${testUser.pubkeyHex}`);

@@ -80,6 +80,11 @@ async function runTests() {
   assert.equal(fahrenheit.toUnit.symbol, "°C");
   assert.equal(parseConversionRequest("-40 c in f").amount, -40);
   assert.equal(parseConversionRequest("10 in to cm").fromUnit.symbol, "in", "'in' is a unit when used as one");
+  assert.equal(parseConversionRequest("10 in in cm").fromUnit.symbol, "in", "inch plus 'in' preposition survives");
+  assert.equal(parseConversionRequest("10 in as cm").fromUnit.symbol, "in", "inch plus 'as' preposition survives");
+  assert.equal(parseConversionRequest("10 in into cm").fromUnit.symbol, "in", "inch plus 'into' preposition survives");
+  assert.equal(parseConversionRequest("1 µm to nm").fromUnit.symbol, "µm", "micro-sign unit is accepted");
+  assert.equal(parseConversionRequest("1 μm to nm").fromUnit.symbol, "µm", "Greek-mu unit is accepted");
   assert.equal(parseConversionRequest("10 square meters to square feet").fromUnit.dimension, "area");
   assert.equal(parseConversionRequest("1 us fluid ounce to tbsp").fromUnit.symbol, "fl oz");
   assert.equal(parseConversionRequest("100 min to sec").kind, "unit", "unit names win over currency codes");
@@ -89,6 +94,7 @@ async function runTests() {
 
   // 4. Offline conversions across every supported category.
   approximate(convertUnitValue(10, "km", "mi"), 6.21371192237334);
+  approximate(convertUnitValue(1, "µm", "nm"), 1000);
   approximate(convertUnitValue(180, "lb", "kg"), 81.6466266);
   approximate(convertUnitValue(32, "f", "c"), 0);
   approximate(convertUnitValue(-40, "c", "f"), -40);
@@ -209,8 +215,35 @@ async function runTests() {
     (err) => err instanceof ConversionError && /503/.test(err.reason),
   );
   assert.equal(transientCalls, 2, "a 5xx response is retried once");
+
+  const rateLimited = stubFetch(() => jsonResponse({}, { status: 429 }));
+  await assert.rejects(
+    () => fetchExchangeRate("USD", "EUR", { fetchImpl: rateLimited }),
+    (err) => err instanceof ConversionError && /rate limiting/.test(err.reason),
+  );
+  assert.equal(rateLimited.calls.length, 2, "rate limiting is retried once");
+
+  const dnsFailure = stubFetch(() => {
+    const err = new Error("fetch failed");
+    err.cause = { code: "ENOTFOUND" };
+    throw err;
+  });
+  await assert.rejects(
+    () => fetchExchangeRate("USD", "EUR", { fetchImpl: dnsFailure }),
+    (err) => err instanceof ConversionError && /DNS lookup failed/.test(err.reason),
+  );
+  assert.equal(dnsFailure.calls.length, 2);
+
+  const timeoutFailure = stubFetch(() => {
+    throw new DOMException("timed out", "TimeoutError");
+  });
+  await assert.rejects(
+    () => fetchExchangeRate("USD", "EUR", { fetchImpl: timeoutFailure }),
+    (err) => err instanceof ConversionError && /timed out/.test(err.reason),
+  );
+  assert.equal(timeoutFailure.calls.length, 2);
   clearConverterCache();
-  console.log("✅ Check 10: rejected pairs fail immediately and transient failures retry once");
+  console.log("✅ Check 10: rejected pairs fail immediately; 5xx, 429, network and timeout failures retry once");
 
   // 11. Malformed payloads are not cached as valid rates.
   const malformed = stubFetch(() => jsonResponse({ base: "USD", quote: "EUR", rate: "nope" }));
@@ -219,8 +252,35 @@ async function runTests() {
     (err) => err instanceof ConversionError && /invalid rate payload/.test(err.reason),
   );
   assert.equal(malformed.calls.length, 1);
+
+  const invalidPayloads = [
+    { ...RATE_BODY, rate: true },
+    { ...RATE_BODY, rate: "0.91339" },
+    { quote: "EUR", rate: 0.91339 },
+    { ...RATE_BODY, base: "EUR" },
+    { ...RATE_BODY, quote: "USD" },
+  ];
+  for (const body of invalidPayloads) {
+    const invalid = stubFetch(() => jsonResponse(body));
+    await assert.rejects(
+      () => fetchExchangeRate("USD", "EUR", { fetchImpl: invalid }),
+      (err) => err instanceof ConversionError && /invalid rate payload/.test(err.reason),
+    );
+    assert.equal(invalid.calls.length, 1, "invalid payloads are final and not retried");
+  }
+
+  const invalidJson = stubFetch(() => ({
+    ok: true,
+    status: 200,
+    json: async () => { throw new SyntaxError("bad json"); },
+  }));
+  await assert.rejects(
+    () => fetchExchangeRate("USD", "EUR", { fetchImpl: invalidJson }),
+    (err) => err instanceof ConversionError && /invalid JSON/.test(err.reason),
+  );
+  assert.equal(invalidJson.calls.length, 1);
   assert.equal(converterCacheSize(), 0);
-  console.log("✅ Check 11: malformed rate payloads are rejected and never cached");
+  console.log("✅ Check 11: malformed, mismatched, boolean and non-JSON payloads are rejected without caching");
 
   // 12. Handler routes help, offline units, live rates, and friendly errors.
   const replies = [];
@@ -262,6 +322,9 @@ async function runTests() {
 
   await handleConverterMessage({ ...context, text: "nonsense" }, { sendReply });
   assert.match(replies.at(-1).text, /couldn't understand/);
+  for (const reply of replies) {
+    assert.deepEqual(reply.options, { source: "converter-bot", ttlSeconds: 123 }, "every reply mirrors source and TTL");
+  }
   clearConverterCache();
   console.log("✅ Check 12: handler mirrors TTL/source and returns helpful replies for every path");
 
